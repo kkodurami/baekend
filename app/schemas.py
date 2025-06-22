@@ -46,5 +46,6 @@ class DamageReportRequest(BaseModel):
     category: Literal["재난/재해", "병해충"]
     title: Optional[str] = None
     content: Optional[str] = None
-    latitude: float
-    longitude: float
+    local: Optional[str] = None
+    # latitude: float
+    # longitude: float

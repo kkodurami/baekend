@@ -228,8 +228,9 @@ def create_damage_report(
     category: str,
     title: str,
     content: str,
-    latitude: float,
-    longitude: float,
+    local: str,
+    # latitude: float,
+    # longitude: float,
     files: List[UploadFile]
 ):
     uploaded_files = []
@@ -249,8 +250,9 @@ def create_damage_report(
         "category": category,
         "title": title,
         "content": content,
-        "latitude": latitude,
-        "longitude": longitude,
+        "local": local,
+        # "latitude": latitude,
+        # "longitude": longitude,
         "files": uploaded_files,
         "created_at": datetime.utcnow()
     }

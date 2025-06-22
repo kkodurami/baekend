@@ -192,8 +192,9 @@ async def report_damage(
     category: str = Form(...),
     title: Optional[str] = Form(None),
     content: Optional[str] = Form(None),
-    latitude: float = Form(...),
-    longitude: float = Form(...),
+    local: Optional[str] = Form(None),
+    # latitude: float = Form(...),
+    # longitude: float = Form(...),
     files: List[UploadFile] = File(...),
     current_user: dict = Depends(get_current_user)
 ):
@@ -202,8 +203,9 @@ async def report_damage(
         category=category,
         title=title,
         content=content,
-        latitude=latitude,
-        longitude=longitude,
+        local=local,
+        # latitude=latitude,
+        # longitude=longitude,
         files=files
     )
-    return {"message": "신고가 성공적으로 접수되었습니다."}
+    return {"message": "✅ 신고가 성공적으로 접수되었습니다."}
