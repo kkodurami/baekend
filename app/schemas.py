@@ -1,0 +1,50 @@
+from pydantic import BaseModel
+from typing import Optional, List, Literal
+from datetime import datetime
+
+class MyPageResponse(BaseModel) :
+    username : str
+    email : str
+    local_id : int
+    region_name: Optional[str] = None
+    crop_name : Optional[str] = None
+    profile_image : Optional[str] = None
+
+class MyPageUpdateRequest(BaseModel):
+    crop_name : Optional[str] = None
+    profile_image : Optional[str] = None
+    local_id: Optional[int] = None
+
+class ChangePasswordRequest(BaseModel):
+    current_password : str
+    new_password : str
+
+class PostCreate(BaseModel) :
+    title : str
+    content : str
+    tags : Optional[List[str]] = []
+
+class PostResponse(BaseModel):
+    id : str
+    user_id : str
+    username: str
+    title: str
+    content: str
+    tags: List[str]
+    created_at: datetime
+
+class PostUpdate(BaseModel):
+    title: Optional[str] = None
+    content: Optional[str] = None
+    tags: Optional[List[str]] = None
+
+class CommentCreate(BaseModel):
+    post_id: str
+    content: str
+
+class DamageReportRequest(BaseModel):
+    category: Literal["재난/재해", "병해충"]
+    title: Optional[str] = None
+    content: Optional[str] = None
+    latitude: float
+    longitude: float
