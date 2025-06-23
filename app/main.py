@@ -22,10 +22,20 @@ from app.crud import (
     add_comment, toggle_like_post, get_posts_by_local, create_damage_report
 )
 from app.auth import create_access_token, get_current_user
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 router = APIRouter()
 bearer_scheme = HTTPBearer()
+
+# CORS 설정
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # ⚠️ 개발 중에는 * 허용, 배포 시에는 도메인 제한 권장
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def custom_openapi():
