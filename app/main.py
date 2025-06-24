@@ -24,6 +24,7 @@ from app.crud import (
 from app.auth import create_access_token, get_current_user
 from fastapi.middleware.cors import CORSMiddleware
 
+
 app = FastAPI()
 router = APIRouter()
 bearer_scheme = HTTPBearer()
@@ -36,7 +37,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 
 def custom_openapi():
     if app.openapi_schema:
@@ -71,7 +71,9 @@ def register(user : UserRegister) :
     except ValueError as e :
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e :
-        raise HTTPException(status_code=500, detail="서버 오류")
+        import traceback
+        traceback.print_exc()  # ⬅️ 콘솔에 에러 출력
+        raise HTTPException(status_code=500, detail="❌ 서버 오류")
     
 # 로그인
 @app.post("/login")
@@ -199,7 +201,8 @@ def list_local_posts(current_user: dict = Depends(get_current_user)):
 # 신고 페이지
 @app.post("/report-damage")
 async def report_damage(
-    category: str = Form(...),
+    main_category: str = Form(...),
+    sub_category: str = Form(...),
     title: Optional[str] = Form(None),
     content: Optional[str] = Form(None),
     local: Optional[str] = Form(None),
@@ -210,7 +213,8 @@ async def report_damage(
 ):
     create_damage_report(
         user=current_user,
-        category=category,
+        main_category=main_category,
+        sub_category=sub_category,
         title=title,
         content=content,
         local=local,

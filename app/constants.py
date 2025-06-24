@@ -17,3 +17,16 @@ LOCAL_CODES = {
     16: "경상남도",
     17: "제주특별자치도",
 }
+
+# 카테고리 정의
+DAMAGE_CATEGORIES = {
+    "재난/재해": {
+        "earthquake_fire": "지진/산불",
+        "typhoon": "태풍/호우",
+        "snowstorm": "폭설"
+    },
+    "병해충": {
+        "disease": "병해",
+        "pest": "해충"
+    }
+}

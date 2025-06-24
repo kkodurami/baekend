@@ -8,7 +8,7 @@ from fastapi import HTTPException, UploadFile
 from .database import users_collection
 import os
 import shutil
-from app.constants import LOCAL_CODES
+from app.constants import LOCAL_CODES, DAMAGE_CATEGORIES
 from typing import List
 
 def create_user(user : UserRegister) :
@@ -226,7 +226,8 @@ os.makedirs(DAMAGE_UPLOAD_DIR, exist_ok=True)
 
 def create_damage_report(
     user: dict,
-    category: str,
+    main_category: str, # 🔍 메인 카테고리 (재난/재해, 병해충)
+    sub_category : str, # 🔍 세부 카테고리 (태풍, 지진 등)
     title: str,
     content: str,
     local: str,
@@ -245,10 +246,14 @@ def create_damage_report(
 
         uploaded_files.append(f"/static/reports/{filename}")
 
+    # 세부 카테고리 이름 가져오기 (선택사항)
+    sub_category_name = DAMAGE_CATEGORIES.get(main_category, {}).get(sub_category, sub_category)
+
     report = {
         "user_id": str(user["_id"]),
         "username": user["username"],
-        "category": category,
+        "main_category": main_category,
+        "sub_category" : sub_category,
         "title": title,
         "content": content,
         "local": local,
@@ -260,4 +265,3 @@ def create_damage_report(
 
     damage_report_collection.insert_one(report)
     return report
-

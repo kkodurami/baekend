@@ -43,7 +43,8 @@ class CommentCreate(BaseModel):
     content: str
 
 class DamageReportRequest(BaseModel):
-    category: Literal["재난/재해", "병해충"]
+    main_category: Literal["재난/재해", "병해충"]
+    sub_category : str
     title: Optional[str] = None
     content: Optional[str] = None
     local: Optional[str] = None
