@@ -26,7 +26,7 @@ DAMAGE_CATEGORIES = {
         "snowstorm": "폭설"
     },
     "병해충": {
-        "disease": "병해",
+        "disease": "질병",
         "pest": "해충"
     }
 }
