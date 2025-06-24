@@ -19,6 +19,7 @@ def create_user(user : UserRegister) :
 
     user_dict = user.dict()
     user_dict['password'] = hashed_pw.decode("utf-8")
+    user_dict['crop_name']
     user_dict['create_date'] = datetime.utcnow()
 
     users_collection.insert_one(user_dict)
@@ -43,7 +44,7 @@ def get_user_mypage(user_id: str):
         "username": user["username"],
         "email": user["email"],
         "local_id": user["local_id"],
-        "crop_name": user.get("crop_name", ""),
+        "crop_name": user["crop_name"],
         "region_name": LOCAL_CODES.get(user["local_id"], "⚠️ 알 수 없음"),
         "profile_image": user.get("profile_image", "")
     }

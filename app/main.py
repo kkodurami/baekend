@@ -146,9 +146,9 @@ def list_posts():
     return {"posts": posts}
 
 # 글 상세 조회
-# @app.get("/posts/{post_id}")
-# def post_detail(post_id: str):
-#     return get_post_detail(post_id)
+@app.get("/posts/{post_id}")
+def post_detail(post_id: str):
+     return get_post_detail(post_id)
 
 # 게시글 수정
 @app.patch("/posts/{post_id}")
