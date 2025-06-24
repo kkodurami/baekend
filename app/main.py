@@ -192,7 +192,7 @@ def like_post(
     return {"message": "좋아요 처리 완료", "liked": result["liked"]}
 
 # 로컬 아이디 필터링
-@app.get("/posts/local")
+@app.get("/post/local")
 def list_local_posts(current_user: dict = Depends(get_current_user)):
     local_id = current_user["local_id"]
     posts = get_posts_by_local(local_id)
