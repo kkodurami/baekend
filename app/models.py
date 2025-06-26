@@ -10,7 +10,11 @@ class UserRegister(BaseModel) :
     local_id : int
     crop_name : Optional[str] = None # ← 농작물 이름 (선택 입력 가능)
 
+
 # 로그인
 class UserLogin(BaseModel) :
     email : EmailStr
     password : str
+
+class CommentUpdate(BaseModel):
+    content: str

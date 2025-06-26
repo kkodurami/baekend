@@ -262,9 +262,15 @@ def get_my_like_status(
     post_id: str,
     current_user: dict = Depends(get_current_user)
 ):
-    """현재 사용자의 좋아요 상태 조회 (로그인 필요)"""
     user_id = str(current_user["_id"])
-    return get_like_status(post_id, user_id)
+    like_status = get_like_status(post_id, user_id)
+    
+    return {
+        "post_id": post_id,
+        "user_id": user_id,
+        "liked": like_status.get("user_liked", False),  # 핵심: 개별 사용자 좋아요 여부
+        "total_likes": like_status.get("total_likes", 0)
+    }
 
 # 로컬 아이디 필터링
 @app.get("/post/local")

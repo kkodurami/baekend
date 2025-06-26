@@ -472,8 +472,10 @@ def get_recent_reports(limit: int = 10):
                 "title": report.get("title", ""),
                 "main_category": report.get("main_category", ""),
                 "sub_category": report.get("sub_category", ""),
-                "created_at": report.get("created_at"),
-                "local": report.get("local", ""),
+                # "created_at": report.get("created_at"),
+                # "local": report.get("local", ""),
+                "latitude" : report.get("latitude", ""),
+                "longitude" : report.get("longitude", ""),
             })
         return reports
     except Exception as e:
