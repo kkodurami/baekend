@@ -282,14 +282,9 @@ def get_my_reports(current_user: dict = Depends(get_current_user)):
     return {"reports": reports}
 
 # 신고 상세 조회
-@app.get("/my-reports/{report_id}")
-def get_report_detail(
-    report_id: str,
-    current_user: dict = Depends(get_current_user)
-):
-    user_id = str(current_user["_id"])
-    report = get_damage_report_detail(report_id, user_id)
-    return {"report": report}
+@app.get("/report/{report_id}")
+def read_report_detail(report_id: str):
+    return get_damage_report_detail(report_id)
 
 # 실시간 신고사항 확인
 @app.get("/reports/recent")

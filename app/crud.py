@@ -393,7 +393,7 @@ def get_user_damage_reports(user_id: str):
     return result
 
 
-def get_damage_report_detail(report_id: str, user_id: str):
+def get_damage_report_detail(report_id: str):
     try:
         oid = ObjectId(report_id)
     except Exception:
@@ -403,12 +403,15 @@ def get_damage_report_detail(report_id: str, user_id: str):
     if not report:
         raise HTTPException(status_code=404, detail="신고 내역을 찾을 수 없습니다.")
 
-    # 본인 소유 신고인지 확인
-    if str(report.get("user_id")) != user_id:
-        raise HTTPException(status_code=403, detail="해당 신고에 접근 권한이 없습니다.")
-
     report["id"] = str(report["_id"])
     del report["_id"]
+
+    # 민감한 정보 제거 (선택)
+    # report.pop("user_id", None)  # 필요시 작성자 정보 제거
+    # report.pop("username", None)
+    # report.pop("email", None)
+    # report.pop("phone", None)
+
     return report
 
 def get_recent_reports(limit: int = 10):
