@@ -19,14 +19,20 @@ from app.crud import (
     create_user, authenticate_user, get_user_mypage, update_user_mypage,
     change_user_password, save_profile_image, create_post,
     get_all_posts_with_index, get_post_detail, update_post, delete_post,
-    add_comment, toggle_like_post, get_posts_by_local, create_damage_report
+    add_comment, toggle_like_post, get_posts_by_local, create_damage_report,
+    get_like_status, get_comments_by_post, get_user_damage_reports,
+    get_damage_report_detail
 )
 from app.auth import create_access_token, get_current_user
 from fastapi.middleware.cors import CORSMiddleware
-
+from app.routes import post
+from fastapi.responses import JSONResponse
+from app.database import users_collection, post_collection
+from bson import ObjectId
 
 app = FastAPI()
-router = APIRouter()
+# router = APIRouter()
+# app.include_router(post.router)
 bearer_scheme = HTTPBearer()
 
 # CORS 설정
@@ -182,6 +188,18 @@ def write_comment(
     del comment["_id"]
     return comment
 
+# 댓글 조회
+@app.get("/posts/{post_id}/comments")
+def get_post_comments(post_id: str):
+    """특정 게시글의 댓글 목록 조회"""
+    comments = get_comments_by_post(post_id)
+    return {
+        "post_id": post_id,
+        "comments": comments,
+        "total": len(comments)
+    }
+
+
 # 좋아요 기능
 @app.post("/posts/{post_id}/like")
 def like_post(
@@ -190,6 +208,38 @@ def like_post(
 ):
     result = toggle_like_post(post_id, str(current_user["_id"]))
     return {"message": "좋아요 처리 완료", "liked": result["liked"]}
+
+# 좋아요 상태
+@app.get("/posts/{post_id}/like-status")
+def get_post_like_status_public(post_id: str):
+    """게시글 좋아요 상태 조회 (로그인 불필요)"""
+    try:
+        # 게시글 존재 확인
+        post = post_collection.find_one({"_id": ObjectId(post_id)})
+        if not post:
+            raise HTTPException(status_code=404, detail="⚠️ 게시글을 찾을 수 없습니다.")
+        
+        total_likes = post.get("likes", 0)
+        
+        return {
+            "post_id": post_id,
+            "total_likes": total_likes,
+            "user_liked": None  # 로그인하지 않은 경우
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail="잘못된 게시글 ID입니다.")
+
+# 로그인한 사용자의 좋아요 상태 조회
+@app.get("/posts/{post_id}/like-status/me")
+def get_my_like_status(
+    post_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """현재 사용자의 좋아요 상태 조회 (로그인 필요)"""
+    user_id = str(current_user["_id"])
+    return get_like_status(post_id, user_id)
 
 # 로컬 아이디 필터링
 @app.get("/post/local")
@@ -223,3 +273,28 @@ async def report_damage(
         files=files
     )
     return {"message": "✅ 신고가 성공적으로 접수되었습니다."}
+
+# 사용자의 신고 목록 조회
+@app.get("/my-reports")
+def get_my_reports(current_user: dict = Depends(get_current_user)):
+    print("현재 사용자 ID:", current_user["_id"])  # 콘솔 확인용
+    user_id = str(current_user["_id"])
+    reports = get_user_damage_reports(user_id)
+    return {"reports": reports}
+
+# 신고 상세 조회
+@app.get("/my-reports/{report_id}")
+def get_report_detail(
+    report_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    user_id = str(current_user["_id"])
+    report = get_damage_report_detail(report_id, user_id)
+    return {"report": report}
+
+
+# @app.on_event("startup")
+# def check_routes():
+#     print("Registered routes:")
+#     for route in app.routes:
+#         print(route.path)

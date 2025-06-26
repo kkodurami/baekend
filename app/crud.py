@@ -5,11 +5,14 @@ from datetime import datetime
 import bcrypt
 from bson import ObjectId
 from fastapi import HTTPException, UploadFile
-from .database import users_collection
+from .database import users_collection, db
 import os
 import shutil
 from app.constants import LOCAL_CODES, DAMAGE_CATEGORIES
 from typing import List
+from bson.errors import InvalidId
+
+
 
 def create_user(user : UserRegister) :
     if users_collection.find_one({"email":user.email}) :
@@ -179,6 +182,45 @@ def add_comment(user: dict, comment_data: dict):
     comments_collection.insert_one(comment)
     return comment
 
+def get_comments_by_post(post_id: str):
+    """특정 게시글의 댓글 목록 조회"""
+    try:
+        # 게시글이 존재하는지 먼저 확인
+        post = post_collection.find_one({"_id": ObjectId(post_id)})
+        if not post:
+            raise HTTPException(status_code=404, detail="⚠️ 게시글을 찾을 수 없습니다.")
+        
+        # 댓글 조회 (최신순)
+        comments = comments_collection.find({"post_id": post_id}).sort("created_at", -1)
+        
+        result = []
+        for comment in comments:
+            result.append({
+                "id": str(comment["_id"]),
+                "user_id": comment["user_id"],
+                "username": comment["username"],
+                "content": comment["content"],
+                "created_at": comment["created_at"].strftime("%Y-%m-%d %H:%M:%S")
+            })
+        
+        return result
+    
+    except Exception as e:
+        raise HTTPException(status_code=400, detail="잘못된 게시글 ID입니다.")
+    
+def get_user_damage_reports(users: str):
+    reports = db.damage_report.find({"user_id": ObjectId(users)})
+
+    result = []
+    for report in reports:
+        result.append({
+            "id": str(report["_id"]),
+            "main_category": report.get("main_category"),
+            "sub_category": report.get("sub_category"),
+            "title": report.get("title")
+        })
+    return result
+
 def toggle_like_post(post_id: str, user_id: str):
     # 중복 방지: user-post 조합이 이미 있는지 확인
     existing = post_likes_collection.find_one({"post_id": post_id, "user_id": user_id})
@@ -203,8 +245,77 @@ def toggle_like_post(post_id: str, user_id: str):
             {"$inc": {"likes": 1}}
         )
         return {"liked": True}
+    
+from bson import ObjectId
+
+# crud.py에 추가할 함수
+def get_like_status(post_id: str, user_id: str):
+    """특정 사용자의 게시글 좋아요 상태 조회"""
+    try:
+        # 게시글이 존재하는지 확인
+        post = post_collection.find_one({"_id": ObjectId(post_id)})
+        if not post:
+            raise HTTPException(status_code=404, detail="⚠️ 게시글을 찾을 수 없습니다.")
+        
+        # 사용자가 좋아요를 눌렀는지 확인
+        like_record = post_likes_collection.find_one({
+            "post_id": post_id,
+            "user_id": user_id
+        })
+        
+        # 전체 좋아요 수
+        total_likes = post.get("likes", 0)
+        
+        return {
+            "post_id": post_id,
+            "user_liked": like_record is not None,
+            "total_likes": total_likes
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail="잘못된 게시글 ID입니다.")
+
+
+def get_post_likes_list(post_id: str, limit: int = 20):
+    """게시글에 좋아요를 누른 사용자 목록 조회"""
+    try:
+        # 게시글이 존재하는지 확인
+        post = post_collection.find_one({"_id": ObjectId(post_id)})
+        if not post:
+            raise HTTPException(status_code=404, detail="⚠️ 게시글을 찾을 수 없습니다.")
+        
+        # 좋아요를 누른 사용자들 조회 (최근순)
+        likes = post_likes_collection.find({"post_id": post_id}).sort("liked_at", -1).limit(limit)
+        
+        user_list = []
+        for like in likes:
+            user = users_collection.find_one({"_id": ObjectId(like["user_id"])})
+            if user:
+                user_list.append({
+                    "user_id": like["user_id"],
+                    "username": user["username"],
+                    "liked_at": like["liked_at"].strftime("%Y-%m-%d %H:%M:%S")
+                })
+        
+        return {
+            "post_id": post_id,
+            "likes": user_list,
+            "total": len(user_list)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail="잘못된 게시글 ID입니다.")
+
 
 def get_posts_by_local(local_id: int):
+    # local_id 유효성 검사
+    if not isinstance(local_id, int) or local_id not in LOCAL_CODES:
+        raise HTTPException(status_code=400, detail="❌ 잘못된 지역 코드입니다.")
+    
     posts = post_collection.find({"local_id": local_id}).sort("created_at", -1)
 
     result = []
@@ -265,3 +376,38 @@ def create_damage_report(
 
     damage_report_collection.insert_one(report)
     return report
+
+
+def get_user_damage_reports(user_id: str):
+    # damage_report에는 user_id가 문자열로 저장되어 있으므로 문자열로 검색
+    reports = db.damage_report.find({"user_id": user_id})  # ObjectId() 제거!
+    
+    result = []
+    for report in reports:
+        result.append({
+            "id": str(report["_id"]),
+            "main_category": report.get("main_category"),
+            "sub_category": report.get("sub_category"),
+            "title": report.get("title")
+        })
+    return result
+
+
+def get_damage_report_detail(report_id: str, user_id: str):
+    try:
+        oid = ObjectId(report_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="유효하지 않은 report_id 형식입니다.")
+
+    report = db.damage_report.find_one({"_id": oid})
+    if not report:
+        raise HTTPException(status_code=404, detail="신고 내역을 찾을 수 없습니다.")
+
+    # 본인 소유 신고인지 확인
+    if str(report.get("user_id")) != user_id:
+        raise HTTPException(status_code=403, detail="해당 신고에 접근 권한이 없습니다.")
+
+    report["id"] = str(report["_id"])
+    del report["_id"]
+    return report
+
