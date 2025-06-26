@@ -20,6 +20,7 @@ class ChangePasswordRequest(BaseModel):
     new_password : str
 
 class PostCreate(BaseModel) :
+    local_id : int
     title : str
     content : str
     tags : Optional[List[str]] = []
@@ -48,5 +49,6 @@ class DamageReportRequest(BaseModel):
     title: Optional[str] = None
     content: Optional[str] = None
     local: Optional[str] = None
-    # latitude: float
-    # longitude: float
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+

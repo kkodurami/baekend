@@ -10,7 +10,7 @@ from typing import Optional, List
 from datetime import datetime
 import os
 
-from app.models import UserRegister, UserLogin
+from app.models import UserRegister, UserLogin, CommentUpdate
 from app.schemas import (
     MyPageResponse, MyPageUpdateRequest, ChangePasswordRequest,
     PostCreate, PostUpdate, CommentCreate
@@ -21,7 +21,8 @@ from app.crud import (
     get_all_posts_with_index, get_post_detail, update_post, delete_post,
     add_comment, toggle_like_post, get_posts_by_local, create_damage_report,
     get_like_status, get_comments_by_post, get_user_damage_reports,
-    get_damage_report_detail, get_recent_reports
+    get_damage_report_detail, get_recent_reports, update_comment, delete_comment,
+    cancel_like_count
 )
 from app.auth import create_access_token, get_current_user
 from fastapi.middleware.cors import CORSMiddleware
@@ -188,6 +189,25 @@ def write_comment(
     del comment["_id"]
     return comment
 
+# 댓글 수정
+@app.patch("/comments/{comment_id}")
+def edit_comment(
+    comments_id: str,
+    comment_update: CommentUpdate,
+    current_user: dict = Depends(get_current_user)
+):
+    update_comment(comments_id, str(current_user["_id"]), comment_update.content)
+    return {"message": "✅ 댓글이 수정되었습니다."}
+
+# 댓글 삭제
+@app.delete("/comments/{comments_id}")
+def remove_comment(
+    comments_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    delete_comment(comments_id, str(current_user["_id"]))
+    return {"message": "✅ 댓글이 삭제되었습니다."}
+
 # 댓글 조회
 @app.get("/posts/{post_id}/comments")
 def get_post_comments(post_id: str):
@@ -230,6 +250,11 @@ def get_post_like_status_public(post_id: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=400, detail="잘못된 게시글 ID입니다.")
+    
+# 좋아요 취소
+@app.delete("/posts/{post_id}/like")
+def cancel_post_like(post_id: str):
+    return cancel_like_count(post_id)
 
 # 로그인한 사용자의 좋아요 상태 조회
 @app.get("/posts/{post_id}/like-status/me")
@@ -256,8 +281,8 @@ async def report_damage(
     title: Optional[str] = Form(None),
     content: Optional[str] = Form(None),
     local: Optional[str] = Form(None),
-    # latitude: float = Form(...),
-    # longitude: float = Form(...),
+    latitude: Optional[str] = Form(None),
+    longitude: Optional[str] = Form(None),
     files: List[UploadFile] = File(...),
     current_user: dict = Depends(get_current_user)
 ):
@@ -268,8 +293,8 @@ async def report_damage(
         title=title,
         content=content,
         local=local,
-        # latitude=latitude,
-        # longitude=longitude,
+        latitude=latitude, # 위도
+        longitude=longitude, # 경도
         files=files
     )
     return {"message": "✅ 신고가 성공적으로 접수되었습니다."}

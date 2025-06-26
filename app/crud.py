@@ -182,6 +182,39 @@ def add_comment(user: dict, comment_data: dict):
     comments_collection.insert_one(comment)
     return comment
 
+def update_comment(comments_id: str, users_id: str, new_content: str):
+    try:
+        comment_oid = ObjectId(comments_id)
+        user_oid = ObjectId(users_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="유효하지 않은 ID 형식입니다.")
+
+    # 🔍 문제점: comments 컬렉션에서 users_id 필드로 찾고 있음
+    # 실제로는 user_id 필드를 사용해야 함
+    result = comments_collection.update_one(
+        {"_id": comment_oid, "user_id": users_id},  # ✅ users_id → user_id로 수정
+        {"$set": {"content": new_content}}
+    )
+
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="댓글을 찾을 수 없거나 수정 권한이 없습니다.")
+
+
+def delete_comment(comments_id: str, users_id: str):
+    try:
+        comment_oid = ObjectId(comments_id)
+        user_oid = ObjectId(users_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="유효하지 않은 ID 형식입니다.")
+
+    # 🔍 마찬가지로 delete_comment도 수정 필요
+    result = comments_collection.delete_one(
+        {"_id": comment_oid, "user_id": users_id}  # ✅ users_id → user_id로 수정
+    )
+
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="댓글을 찾을 수 없거나 삭제 권한이 없습니다.")
+
 def get_comments_by_post(post_id: str):
     """특정 게시글의 댓글 목록 조회"""
     try:
@@ -248,7 +281,6 @@ def toggle_like_post(post_id: str, user_id: str):
     
 from bson import ObjectId
 
-# crud.py에 추가할 함수
 def get_like_status(post_id: str, user_id: str):
     """특정 사용자의 게시글 좋아요 상태 조회"""
     try:
@@ -311,6 +343,23 @@ def get_post_likes_list(post_id: str, limit: int = 20):
         raise HTTPException(status_code=400, detail="잘못된 게시글 ID입니다.")
 
 
+def cancel_like_count(post_id: str):
+    try:
+        oid = ObjectId(post_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="유효하지 않은 post_id 형식입니다.")
+
+    post = db.post.find_one({"_id": oid})
+    if not post:
+        raise HTTPException(status_code=404, detail="게시글이 존재하지 않습니다.")
+
+    current_likes = post.get("likes", 0)
+    new_likes = max(0, current_likes - 1)
+
+    db.post.update_one({"_id": oid}, {"$set": {"likes": new_likes}})
+    return {"message": "❌ 좋아요가 취소되었습니다."}
+
+
 def get_posts_by_local(local_id: int):
     # local_id 유효성 검사
     if not isinstance(local_id, int) or local_id not in LOCAL_CODES:
@@ -342,8 +391,8 @@ def create_damage_report(
     title: str,
     content: str,
     local: str,
-    # latitude: float,
-    # longitude: float,
+    latitude: float, # 위도
+    longitude: float, # 경도
     files: List[UploadFile]
 ):
     uploaded_files = []
@@ -368,8 +417,8 @@ def create_damage_report(
         "title": title,
         "content": content,
         "local": local,
-        # "latitude": latitude,
-        # "longitude": longitude,
+        "latitude": latitude,
+        "longitude": longitude,
         "files": uploaded_files,
         "created_at": datetime.utcnow()
     }
