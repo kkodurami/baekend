@@ -21,7 +21,7 @@ from app.crud import (
     get_all_posts_with_index, get_post_detail, update_post, delete_post,
     add_comment, toggle_like_post, get_posts_by_local, create_damage_report,
     get_like_status, get_comments_by_post, get_user_damage_reports,
-    get_damage_report_detail
+    get_damage_report_detail, get_recent_reports
 )
 from app.auth import create_access_token, get_current_user
 from fastapi.middleware.cors import CORSMiddleware
@@ -290,6 +290,12 @@ def get_report_detail(
     user_id = str(current_user["_id"])
     report = get_damage_report_detail(report_id, user_id)
     return {"report": report}
+
+# 실시간 신고사항 확인
+@app.get("/reports/recent")
+def read_recent_reports(limit: int = 20):
+    reports = get_recent_reports(limit)
+    return {"reports": reports}
 
 
 # @app.on_event("startup")

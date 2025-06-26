@@ -411,3 +411,18 @@ def get_damage_report_detail(report_id: str, user_id: str):
     del report["_id"]
     return report
 
+def get_recent_reports(limit: int = 10):
+    try:
+        reports_cursor = db.damage_report.find().sort("created_at", -1).limit(limit)
+        reports = []
+        for report in reports_cursor:
+            reports.append({
+                "title": report.get("title", ""),
+                "main_category": report.get("main_category", ""),
+                "sub_category": report.get("sub_category", ""),
+                "created_at": report.get("created_at"),
+                "local": report.get("local", ""),
+            })
+        return reports
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="신고 목록 조회 중 오류 발생")
