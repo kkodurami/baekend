@@ -25,6 +25,7 @@ from app.crud import (
 )
 from app.auth import create_access_token, get_current_user
 from fastapi.middleware.cors import CORSMiddleware
+from app.routes import post
 from fastapi.responses import JSONResponse
 from app.database import users_collection, post_collection
 from bson import ObjectId
@@ -285,6 +286,8 @@ def get_my_reports(current_user: dict = Depends(get_current_user)):
 @app.get("/report/{report_id}")
 def read_report_detail(report_id: str):
     return get_damage_report_detail(report_id)
+
+
 
 # 실시간 신고사항 확인
 @app.get("/reports/recent")
