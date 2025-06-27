@@ -8,3 +8,5 @@ python-jose
 pydantic
 uvicorn[standard]
 motor
+pydantic[email]
+email-validator
