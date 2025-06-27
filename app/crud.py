@@ -470,6 +470,7 @@ def get_recent_reports(limit: int = 10):
         for report in reports_cursor:
             reports.append({
                 "title": report.get("title", ""),
+                "id" : str(report["_id"]),
                 "main_category": report.get("main_category", ""),
                 "sub_category": report.get("sub_category", ""),
                 # "created_at": report.get("created_at"),
