@@ -10,6 +10,8 @@ from typing import Optional, List
 from datetime import datetime
 import os
 
+import uvicorn
+
 from app.models import UserRegister, UserLogin, CommentUpdate
 from app.schemas import (
     MyPageResponse, MyPageUpdateRequest, ChangePasswordRequest,
@@ -326,6 +328,10 @@ def read_recent_reports(limit: int = 20):
     return {"reports": reports}
 
 
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
+    
 # @app.on_event("startup")
 # def check_routes():
 #     print("Registered routes:")
