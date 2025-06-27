@@ -11,6 +11,11 @@ import shutil
 from app.constants import LOCAL_CODES, DAMAGE_CATEGORIES
 from typing import List
 from bson.errors import InvalidId
+import uuid
+import json
+import logging
+from pathlib import Path
+from typing import Optional, List
 
 
 
@@ -250,7 +255,9 @@ def get_user_damage_reports(users: str):
             "id": str(report["_id"]),
             "main_category": report.get("main_category"),
             "sub_category": report.get("sub_category"),
-            "title": report.get("title")
+            "title": report.get("title"),
+            "latitude" : report.get("latitude"),
+            "longitude" : report.get("longitude")
         })
     return result
 
@@ -381,50 +388,107 @@ def get_posts_by_local(local_id: int):
     return result
 
 
-DAMAGE_UPLOAD_DIR = "static/reports"
-os.makedirs(DAMAGE_UPLOAD_DIR, exist_ok=True)
+BASE_DIR = Path(__file__).parent.absolute()
+REPORT_DIR = BASE_DIR / "static" / "uploads" / "reports"
+
+ALLOWED_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff'}
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+
+logger = logging.getLogger(__name__)
+
+def get_current_user():
+    return {
+        "user_id": "user_123",
+        "username": "test_user",
+        "email": "test@example.com"
+    }
+
+def validate_file(file: UploadFile) -> bool:
+    file_ext = Path(file.filename).suffix.lower()
+    if file_ext not in ALLOWED_EXTENSIONS:
+        return False
+    if not file.content_type or not file.content_type.startswith('image/'):
+        return False
+    return True
+
+async def save_uploaded_file(file: UploadFile, report_id: str) -> dict:
+    try:
+        file_ext = Path(file.filename).suffix.lower()
+        unique_filename = f"{report_id}_{uuid.uuid4().hex[:8]}{file_ext}"
+        file_path = REPORT_DIR / unique_filename
+
+        content = await file.read()
+        if len(content) > MAX_FILE_SIZE:
+            raise HTTPException(status_code=413, detail="파일 크기가 너무 큽니다.")
+
+        with open(file_path, "wb") as buffer:
+            buffer.write(content)
+
+        return {
+            "original_filename": file.filename,
+            "saved_filename": unique_filename,
+            "file_path": str(file_path),
+            "file_url": f"/static/uploads/reports/{unique_filename}",
+            "file_size": len(content),
+            "content_type": file.content_type
+        }
+
+    except Exception as e:
+        logger.error(f"파일 저장 실패: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"파일 저장 실패: {str(e)}")
+    
+# JSON 저장 디렉토리 설정
+BASE_DIR = Path(__file__).parent
+REPORT_DIR = BASE_DIR / "static" / "uploads" / "reports"
+REPORT_DIR.mkdir(parents=True, exist_ok=True)
 
 def create_damage_report(
     user: dict,
-    main_category: str, # 🔍 메인 카테고리 (재난/재해, 병해충)
-    sub_category : str, # 🔍 세부 카테고리 (태풍, 지진 등)
-    title: str,
-    content: str,
-    local: str,
-    latitude: float, # 위도
-    longitude: float, # 경도
-    files: List[UploadFile]
-):
-    uploaded_files = []
+    main_category: str,
+    sub_category: str,
+    title: Optional[str],
+    content: Optional[str],
+    local: Optional[str],
+    latitude: Optional[str],
+    longitude: Optional[str],
+    file_info: List[dict]
+) -> str:
+    """
+    손해 신고 데이터 저장 (JSON 파일 기반 저장 - 테스트/로컬용)
+    """
+    report_id = f"REPORT_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
 
-    for file in files:
-        filename = f"{datetime.utcnow().timestamp()}_{file.filename}"
-        filepath = os.path.join(DAMAGE_UPLOAD_DIR, filename)
-
-        with open(filepath, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-
-        uploaded_files.append(f"/static/reports/{filename}")
-
-    # 세부 카테고리 이름 가져오기 (선택사항)
-    sub_category_name = DAMAGE_CATEGORIES.get(main_category, {}).get(sub_category, sub_category)
-
-    report = {
-        "user_id": str(user["_id"]),
-        "username": user["username"],
-        "main_category": main_category,
-        "sub_category" : sub_category,
-        "title": title,
-        "content": content,
-        "local": local,
-        "latitude": latitude,
-        "longitude": longitude,
-        "files": uploaded_files,
-        "created_at": datetime.utcnow()
+    user_info = {
+        "user_id": str(user.get("user_id")),  # ObjectId → str 처리
+        "username": user.get("username"),
+        "email": user.get("email")
     }
 
-    damage_report_collection.insert_one(report)
-    return report
+    report_data = {
+        "report_id": report_id,
+        "user_info": user_info,
+        "main_category": main_category,
+        "sub_category": sub_category,
+        "title": title,
+        "content": content,
+        "location": {
+            "local": local,
+            "latitude": float(latitude) if latitude else None,
+            "longitude": float(longitude) if longitude else None
+        },
+        "files": file_info,
+        "created_at": datetime.now().isoformat(),
+        "status": "접수완료"
+    }
+
+    try:
+        report_file = REPORT_DIR / f"{report_id}.json"
+        with open(report_file, "w", encoding="utf-8") as f:
+            json.dump(report_data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"신고 저장 실패: {str(e)}")
+
+    return report_id
 
 
 def get_user_damage_reports(user_id: str):

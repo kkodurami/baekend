@@ -5,10 +5,15 @@ from fastapi import (
 from fastapi.security import HTTPBearer
 from fastapi.openapi.utils import get_openapi
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 from typing import Optional, List
 from datetime import datetime
 import os
+
+import uuid
+from pathlib import Path
+import logging
 
 from app.models import UserRegister, UserLogin, CommentUpdate
 from app.schemas import (
@@ -22,13 +27,14 @@ from app.crud import (
     add_comment, toggle_like_post, get_posts_by_local, create_damage_report,
     get_like_status, get_comments_by_post, get_user_damage_reports,
     get_damage_report_detail, get_recent_reports, update_comment, delete_comment,
-    cancel_like_count
+    cancel_like_count, save_uploaded_file, validate_file, get_current_user
 )
 from app.auth import create_access_token, get_current_user
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from app.database import users_collection, post_collection
 from bson import ObjectId
+from fastapi.staticfiles import StaticFiles
 
 app = FastAPI()
 # router = APIRouter()
@@ -278,8 +284,26 @@ def list_local_posts(current_user: dict = Depends(get_current_user)):
     posts = get_posts_by_local(local_id)
     return {"posts": posts}
 
-# 신고 페이지
-@app.post("/report-damage")
+
+# 디렉토리 설정
+BASE_DIR = Path(__file__).parent.absolute()
+STATIC_DIR = BASE_DIR / "static"
+UPLOAD_DIR = STATIC_DIR / "uploads"
+REPORT_DIR = UPLOAD_DIR / "reports"
+
+# 디렉토리 생성
+for dir in [STATIC_DIR, UPLOAD_DIR, REPORT_DIR]:
+    dir.mkdir(exist_ok=True)
+
+# 정적 파일 마운트
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+# 로깅 설정
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# 피해 신고
+@app.post("/damage-report")
 async def report_damage(
     main_category: str = Form(...),
     sub_category: str = Form(...),
@@ -288,21 +312,32 @@ async def report_damage(
     local: Optional[str] = Form(None),
     latitude: Optional[str] = Form(None),
     longitude: Optional[str] = Form(None),
-    files: List[UploadFile] = File(...),
+    files: List[UploadFile] = File([]),
     current_user: dict = Depends(get_current_user)
 ):
-    create_damage_report(
+    report_id = f"RPT_{uuid.uuid4().hex[:8]}"
+    uploaded_file_infos = []
+
+    for file in files:
+        if not validate_file(file):
+            raise HTTPException(status_code=400, detail=f"{file.filename}는 지원하지 않는 파일입니다.")
+        uploaded = await save_uploaded_file(file, report_id)
+        uploaded_file_infos.append(uploaded)
+
+    report_id = create_damage_report(
         user=current_user,
         main_category=main_category,
         sub_category=sub_category,
         title=title,
         content=content,
         local=local,
-        latitude=latitude, # 위도
-        longitude=longitude, # 경도
-        files=files
+        latitude=latitude,
+        longitude=longitude,
+        file_info=uploaded_file_infos
     )
-    return {"message": "✅ 신고가 성공적으로 접수되었습니다."}
+
+    return {"message": "✅ 신고가 접수되었습니다.", "report_id": report_id}
+
 
 # 사용자의 신고 목록 조회
 @app.get("/my-reports")
