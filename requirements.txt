@@ -10,3 +10,4 @@ uvicorn[standard]
 motor
 pydantic[email]
 email-validator
+python-multipart
