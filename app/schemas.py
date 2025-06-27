@@ -8,12 +8,13 @@ class MyPageResponse(BaseModel) :
     local_id : int
     region_name: Optional[str] = None
     crop_name : Optional[str] = None
-    profile_image : Optional[str] = None
+    # profile_image : Optional[str] = None
 
 class MyPageUpdateRequest(BaseModel):
     crop_name : Optional[str] = None
     profile_image : Optional[str] = None
     local_id: Optional[int] = None
+    # profile_image : Optional[str] = None
 
 class ChangePasswordRequest(BaseModel):
     current_password : str

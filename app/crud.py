@@ -54,7 +54,7 @@ def get_user_mypage(user_id: str):
         "local_id": user["local_id"],
         "crop_name": user["crop_name"],
         "region_name": LOCAL_CODES.get(user["local_id"], "⚠️ 알 수 없음"),
-        "profile_image": user.get("profile_image", "")
+        # "profile_image": user.get("profile_image", "")
     }
 
 def update_user_mypage(user_id: str, update_data: dict):
@@ -62,8 +62,8 @@ def update_user_mypage(user_id: str, update_data: dict):
 
     if update_data.get("crop_name") is not None:
         update_fields["crop_name"] = update_data["crop_name"]
-    if update_data.get("profile_image") is not None:
-        update_fields["profile_image"] = update_data["profile_image"]
+    # if update_data.get("profile_image") is not None:
+    #     update_fields["profile_image"] = update_data["profile_image"]
     if update_data.get("local_id") is not None:
         update_fields["local_id"] = update_data["local_id"]
 
@@ -85,24 +85,28 @@ def change_user_password(user_id: str, current_pw: str, new_pw: str):
     users_collection.update_one({"_id": ObjectId(user_id)}, {"$set": {"password": new_hashed}})
 
 
-UPLOAD_DIR = "static/profile_images"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+# 프로필 사진 (주석처리)
+# UPLOAD_DIR = "static/profile_images"  
+# os.makedirs(UPLOAD_DIR, exist_ok=True)  
 
-def save_profile_image(user_id: str, file: UploadFile) -> str:
-    filename = f"{user_id}_{file.filename}"
-    file_path = os.path.join(UPLOAD_DIR, filename)
+# UPLOAD_DIR = "static/profile_images"
+# os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+# def save_profile_image(user_id: str, file: UploadFile) -> str:
+#     filename = f"{user_id}_{file.filename}"
+#     file_path = os.path.join(UPLOAD_DIR, filename)
 
-    url = f"/static/profile_images/{filename}"
+#     with open(file_path, "wb") as buffer:
+#         shutil.copyfileobj(file.file, buffer)
 
-    users_collection.update_one(
-        {"_id": ObjectId(user_id)},
-        {"$set": {"profile_image": url}}
-    )
+#     url = f"/static/profile_images/{filename}"
 
-    return url
+#     users_collection.update_one(
+#         {"_id": ObjectId(user_id)},
+#         {"$set": {"profile_image": url}}
+#     )
+
+#     return url
 
 
 def create_post(user: dict, post_data: dict):
@@ -442,6 +446,7 @@ BASE_DIR = Path(__file__).parent
 REPORT_DIR = BASE_DIR / "static" / "uploads" / "reports"
 REPORT_DIR.mkdir(parents=True, exist_ok=True)
 
+# 2. crud.py 수정 - create_damage_report 함수
 def create_damage_report(
     user: dict,
     main_category: str,
@@ -454,41 +459,42 @@ def create_damage_report(
     file_info: List[dict]
 ) -> str:
     """
-    손해 신고 데이터 저장 (JSON 파일 기반 저장 - 테스트/로컬용)
+    손해 신고 데이터 MongoDB에 저장 (수정된 버전)
     """
-    report_id = f"REPORT_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
-
-    user_info = {
-        "user_id": str(user.get("user_id")),  # ObjectId → str 처리
-        "username": user.get("username"),
-        "email": user.get("email")
-    }
-
-    report_data = {
-        "report_id": report_id,
-        "user_info": user_info,
-        "main_category": main_category,
-        "sub_category": sub_category,
-        "title": title,
-        "content": content,
-        "location": {
-            "local": local,
-            "latitude": float(latitude) if latitude else None,
-            "longitude": float(longitude) if longitude else None
-        },
-        "files": file_info,
-        "created_at": datetime.now().isoformat(),
-        "status": "접수완료"
-    }
-
     try:
-        report_file = REPORT_DIR / f"{report_id}.json"
-        with open(report_file, "w", encoding="utf-8") as f:
-            json.dump(report_data, f, ensure_ascii=False, indent=2)
+        # 사용자 정보 처리 - ObjectId 문제 해결
+        user_id = str(user.get("_id")) if "_id" in user else str(user.get("user_id", ""))
+        
+        report_data = {
+            "user_id": user_id,  # 문자열로 저장
+            "username": user.get("username", ""),
+            "email": user.get("email", ""),
+            "main_category": main_category,
+            "sub_category": sub_category,
+            "title": title,
+            "content": content,
+            "local": local,
+            "latitude": float(latitude) if latitude and latitude != "" else None,
+            "longitude": float(longitude) if longitude and longitude != "" else None,
+            "files": file_info,
+            "created_at": datetime.utcnow(),  # datetime.now() 대신 utcnow() 사용
+            "status": "접수완료"
+        }
+        
+        print(f"저장할 데이터: {report_data}")  # 디버깅용
+        
+        # MongoDB에 저장
+        result = damage_report_collection.insert_one(report_data)
+        
+        if result.inserted_id:
+            print(f"저장 성공! ID: {result.inserted_id}")
+            return str(result.inserted_id)
+        else:
+            raise Exception("저장 실패")
+            
     except Exception as e:
+        print(f"DB 저장 오류: {str(e)}")
         raise HTTPException(status_code=500, detail=f"신고 저장 실패: {str(e)}")
-
-    return report_id
 
 
 def get_user_damage_reports(user_id: str):

@@ -22,7 +22,7 @@ from app.schemas import (
 )
 from app.crud import (
     create_user, authenticate_user, get_user_mypage, update_user_mypage,
-    change_user_password, save_profile_image, create_post,
+    change_user_password, create_post,
     get_all_posts_with_index, get_post_detail, update_post, delete_post,
     add_comment, toggle_like_post, get_posts_by_local, create_damage_report,
     get_like_status, get_comments_by_post, get_user_damage_reports,
@@ -133,14 +133,14 @@ def update_mypage(update_req: MyPageUpdateRequest, current_user: dict = Depends(
     
 
 # 프로필 이미지 업로드
-@app.post("/upload-profile-image")
-def upload_profile_image(
-    file: UploadFile = File(...),
-    current_user: dict = Depends(get_current_user)
-):
-    user_id = str(current_user["_id"])
-    url = save_profile_image(user_id, file)
-    return {"message": "✅ 프로필 이미지 업로드 완료", "profile_image_url": url}
+# @app.post("/upload-profile-image")
+# def upload_profile_image(
+#     file: UploadFile = File(...),
+#     current_user: dict = Depends(get_current_user)
+# ):
+#     user_id = str(current_user["_id"])
+#     url = save_profile_image(user_id, file)
+#     return {"message": "✅ 프로필 이미지 업로드 완료", "profile_image_url": url}
 
 # 게시글 작성
 @app.post("/post")
@@ -304,7 +304,7 @@ logger = logging.getLogger(__name__)
 
 # 피해 신고
 @app.post("/damage-report")
-async def report_damage(
+async def report_damage_fixed(
     main_category: str = Form(...),
     sub_category: str = Form(...),
     title: Optional[str] = Form(None),
@@ -315,28 +315,55 @@ async def report_damage(
     files: List[UploadFile] = File([]),
     current_user: dict = Depends(get_current_user)
 ):
-    report_id = f"RPT_{uuid.uuid4().hex[:8]}"
-    uploaded_file_infos = []
-
-    for file in files:
-        if not validate_file(file):
-            raise HTTPException(status_code=400, detail=f"{file.filename}는 지원하지 않는 파일입니다.")
-        uploaded = await save_uploaded_file(file, report_id)
-        uploaded_file_infos.append(uploaded)
-
-    report_id = create_damage_report(
-        user=current_user,
-        main_category=main_category,
-        sub_category=sub_category,
-        title=title,
-        content=content,
-        local=local,
-        latitude=latitude,
-        longitude=longitude,
-        file_info=uploaded_file_infos
-    )
-
-    return {"message": "✅ 신고가 접수되었습니다.", "report_id": report_id}
+    """수정된 피해 신고 함수"""
+    
+    print(f"현재 사용자: {current_user}")  # 디버깅용
+    print(f"받은 데이터: main_category={main_category}, sub_category={sub_category}")
+    
+    try:
+        # 파일 처리 (기존 로직 유지하되 에러 처리 강화)
+        uploaded_file_infos = []
+        
+        if files:
+            report_id = f"RPT_{uuid.uuid4().hex[:8]}"
+            
+            for file in files:
+                if file.filename:  # 빈 파일 체크
+                    if not validate_file(file):
+                        raise HTTPException(status_code=400, detail=f"{file.filename}는 지원하지 않는 파일입니다.")
+                    
+                    try:
+                        uploaded = await save_uploaded_file(file, report_id)
+                        uploaded_file_infos.append(uploaded)
+                    except Exception as e:
+                        print(f"파일 저장 오류: {str(e)}")
+                        # 파일 저장 실패해도 진행 (선택사항)
+                        continue
+        
+        # DB에 저장 - 수정된 함수 사용
+        report_id = create_damage_report(
+            user=current_user,
+            main_category=main_category,
+            sub_category=sub_category,
+            title=title,
+            content=content,
+            local=local,
+            latitude=latitude,
+            longitude=longitude,
+            file_info=uploaded_file_infos
+        )
+        
+        return {
+            "message": "✅ 신고가 접수되었습니다.", 
+            "report_id": report_id,
+            "uploaded_files": len(uploaded_file_infos)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"전체 프로세스 오류: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"신고 처리 실패: {str(e)}")
 
 
 # 사용자의 신고 목록 조회
