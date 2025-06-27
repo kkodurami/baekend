@@ -26,7 +26,6 @@ from app.crud import (
 )
 from app.auth import create_access_token, get_current_user
 from fastapi.middleware.cors import CORSMiddleware
-from app.routes import post
 from fastapi.responses import JSONResponse
 from app.database import users_collection, post_collection
 from bson import ObjectId
