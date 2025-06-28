@@ -1,6 +1,6 @@
 from fastapi import (
     FastAPI, HTTPException, Header, Depends, APIRouter,
-    UploadFile, File, Form
+    UploadFile, File, Form, Query
 )
 from fastapi.security import HTTPBearer
 from fastapi.openapi.utils import get_openapi
@@ -27,7 +27,7 @@ from app.crud import (
     add_comment, toggle_like_post, get_posts_by_local, create_damage_report,
     get_like_status, get_comments_by_post, get_user_damage_reports,
     get_damage_report_detail, get_recent_reports, update_comment, delete_comment,
-    cancel_like_count, save_uploaded_file, validate_file, get_current_user
+    cancel_like_count, save_uploaded_file, validate_file, get_current_user, detect_damage_from_report
 )
 from app.auth import create_access_token, get_current_user
 from fastapi.middleware.cors import CORSMiddleware
@@ -387,6 +387,19 @@ def read_recent_reports(limit: int = 20):
     reports = get_recent_reports(limit)
     return {"reports": reports}
 
+# 병해충감지 
+@app.get("/detect-damage/{report_id}")
+def detect_damage_api(
+    report_id: str,
+    confidence_threshold: float = Query(0.25, ge=0.0, le=1.0, description="신뢰도 임계값")
+):
+    """
+    신고된 이미지 기반으로 자동 탐지 수행
+    - report_id로 신고 이미지 불러옴
+    - sub_category가 '해충' 또는 '병해'인 경우 해당 모델로 탐지
+    """
+    result = detect_damage_from_report(report_id, confidence_threshold)
+    return result
 
 # @app.on_event("startup")
 # def check_routes():

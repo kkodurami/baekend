@@ -16,6 +16,12 @@ import json
 import logging
 from pathlib import Path
 from typing import Optional, List
+import torch
+from PIL import Image
+import io
+import pandas as pd
+import numpy as np
+from ultralytics import YOLO
 
 
 
@@ -570,3 +576,119 @@ def get_recent_reports(limit: int = 10):
         return reports
     except Exception as e:
         raise HTTPException(status_code=500, detail="신고 목록 조회 중 오류 발생")
+
+# 모델 경로 설정 (절대경로)
+BASE_DIR = Path(__file__).resolve().parent
+MODEL_DIR = BASE_DIR / "model"
+
+pest_model_path = MODEL_DIR / "Bug_Detect.pt"  # 해충 탐지 모델
+disease_model_path = MODEL_DIR / "Crop_Disease.pt"  # 병해 탐지 모델
+
+if not pest_model_path.exists():
+    raise RuntimeError(f"해충 탐지 모델이 존재하지 않습니다: {pest_model_path}")
+if not disease_model_path.exists():
+    raise RuntimeError(f"병해 탐지 모델이 존재하지 않습니다: {disease_model_path}")
+
+# Ultralytics YOLO 모델 로드
+pest_model = YOLO(str(pest_model_path))
+disease_model = YOLO(str(disease_model_path))
+
+pest_labels = pest_model.names
+disease_labels = disease_model.names
+
+def preprocess_image(image_bytes):
+    try:
+        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        return image
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"이미지 처리 실패: {str(e)}")
+
+def process_yolo_results(results, labels, confidence_threshold=0.25):
+    detections = []
+    for box in results[0].boxes:
+        conf = float(box.conf[0])
+        if conf >= confidence_threshold:
+            class_id = int(box.cls[0])
+            xyxy = box.xyxy[0].tolist()
+            detections.append({
+                "class_id": class_id,
+                "class_name": labels[class_id],
+                "confidence": conf,
+                "bbox": {
+                    "x1": xyxy[0],
+                    "y1": xyxy[1],
+                    "x2": xyxy[2],
+                    "y2": xyxy[3]
+                }
+            })
+    return detections
+
+def detect_damage_from_report(report_id: str, confidence_threshold: float = 0.25):
+    print(f"검색하려는 report_id: {report_id}")
+    print(f"report_id 타입: {type(report_id)}")
+    
+    # 전체 데이터 확인
+    total_count = db.damage_report.count_documents({})
+    print(f"damage_report 컬렉션의 총 문서 수: {total_count}")
+    
+    # 첫 번째 문서 확인
+    first_doc = db.damage_report.find_one()
+    if first_doc:
+        print(f"첫 번째 문서의 _id: {first_doc['_id']}, 타입: {type(first_doc['_id'])}")
+    
+    # ObjectId로 시도
+    from bson import ObjectId
+    try:
+        object_id = ObjectId(report_id)
+        print(f"ObjectId로 변환: {object_id}")
+        report = db.damage_report.find_one({"_id": object_id})
+        print(f"ObjectId로 검색 결과: {report is not None}")
+    except Exception as e:
+        print(f"ObjectId 변환 실패: {e}")
+        report = None
+    
+    # 문자열로도 시도
+    if not report:
+        report = db.damage_report.find_one({"_id": report_id})
+        print(f"문자열로 검색 결과: {report is not None}")
+    
+    if not report:
+        raise HTTPException(status_code=404, detail="해당 report_id의 신고를 찾을 수 없습니다")
+
+    main = report.get("main_category")
+    sub = report.get("sub_category")
+
+    if not main or not sub:
+        raise HTTPException(status_code=400, detail="main_category 또는 sub_category 정보가 부족합니다")
+
+    if not report.get("files") or not report["files"][0].get("file_path"):
+        raise HTTPException(status_code=400, detail="저장된 이미지 경로를 찾을 수 없습니다")
+
+    image_path = Path(report["files"][0]["file_path"])
+    if not image_path.exists():
+        raise HTTPException(status_code=404, detail="이미지 파일이 존재하지 않습니다")
+
+    with open(image_path, "rb") as f:
+        image_bytes = f.read()
+
+    image_pil = preprocess_image(image_bytes)
+
+    if sub == "해충":
+        results = pest_model(image_pil)
+        labels = pest_labels
+        category = "해충"
+    elif sub == "병해":
+        results = disease_model(image_pil)
+        labels = disease_labels
+        category = "병해"
+    else:
+        raise HTTPException(status_code=400, detail="지원하지 않는 sub_category입니다 (해충, 병해만 가능)")
+
+    detections = process_yolo_results(results, labels, confidence_threshold)
+
+    return {
+        "category": category,
+        "total_detections": len(detections),
+        "detections": detections,
+        "primary_detection": detections[0] if detections else None
+    }
