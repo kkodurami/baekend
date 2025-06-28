@@ -30,6 +30,8 @@ from app.crud import (
     cancel_like_count, save_uploaded_file, validate_file, get_current_user, detect_damage_from_report,
     fetch_ongoing_projects
 )
+
+from . import crud, schemas
 from app.auth import create_access_token, get_current_user
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -402,10 +404,12 @@ def detect_damage_api(
     result = detect_damage_from_report(report_id, confidence_threshold)
     return result
 
-@app.get("/rda/ongoing-projects")
-def read_ongoing_projects():
-    projects = fetch_ongoing_projects()
-    return {"ongoing_projects": projects}
+@app.get("/rda/ongoing-projects", response_model=list[schemas.Project])
+def get_ongoing_projects():
+    """
+    농촌진흥청 ongoing projects (세미나/행사) 목록과 상세페이지 링크를 반환합니다.
+    """
+    return crud.fetch_ongoing_projects()
 
 # @app.on_event("startup")
 # def check_routes():

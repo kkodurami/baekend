@@ -1,5 +1,5 @@
-from pydantic import BaseModel
-from typing import Optional, List, Literal
+from pydantic import BaseModel, HttpUrl
+from typing import Optional, List, Literal, Dict
 from datetime import datetime
 
 class MyPageResponse(BaseModel) :
@@ -53,3 +53,6 @@ class DamageReportRequest(BaseModel):
     latitude: Optional[float] = None
     longitude: Optional[float] = None
 
+class Project(BaseModel):
+    title: str
+    link: str

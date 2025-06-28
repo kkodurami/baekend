@@ -28,6 +28,8 @@ from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 import re
+from urllib.parse import urljoin
+from app import schemas
 
 def create_user(user : UserRegister) :
     if users_collection.find_one({"email":user.email}) :
@@ -704,22 +706,43 @@ def detect_damage_from_report(report_id: str, confidence_threshold: float = 0.25
         "primary_detection": detections[0] if detections else None
     }
 
+def convert_js_link(js_link: str) -> str:
+    if js_link.startswith("javascript:fn_detailView"):
+        try:
+            inner = js_link[js_link.index("(")+1 : js_link.index(")")]
+            type_str, s_id = [s.strip().strip("'") for s in inner.split(",")]
+            return f"https://www.rda.go.kr/young/custom/{type_str}/view.do?sId={s_id}&cp=1"
+        except Exception:
+            return ""
+    return js_link
+
 
 def fetch_ongoing_projects():
-    url = "https://www.rda.go.kr/young/custom.do"
-    resp = requests.get(url)
+    """
+    농촌진흥청 ongoing projects (세미나/행사) 목록과 상세페이지 링크를 크롤링하여 반환
+    """
+    base_url = "https://www.rda.go.kr"
+    list_url = f"{base_url}/young/custom.do"
+
+    resp = requests.get(list_url)
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
 
     projects = []
-    
-    # 정확한 CSS 선택자: div.cardName > a
+
     for a_tag in soup.select("div.cardName > a"):
         title = a_tag.get("title", "").strip()
-        if title:
-            projects.append(title)
-        else:
-            # fallback: 내부 텍스트
-            projects.append(a_tag.get_text(strip=True))
+        if not title:
+            title = a_tag.get_text(strip=True)
+
+        raw_link = a_tag.get("href", "").strip()
+        link = convert_js_link(raw_link)
+
+        projects.append(
+            schemas.Project(
+                title=title,
+                link=link
+            )
+        )
 
     return projects
