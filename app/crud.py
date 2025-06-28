@@ -22,8 +22,12 @@ import io
 import pandas as pd
 import numpy as np
 from ultralytics import YOLO
-
-
+from bs4 import BeautifulSoup
+import requests
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+import re
 
 def create_user(user : UserRegister) :
     if users_collection.find_one({"email":user.email}) :
@@ -699,3 +703,23 @@ def detect_damage_from_report(report_id: str, confidence_threshold: float = 0.25
         "detections": detections,
         "primary_detection": detections[0] if detections else None
     }
+
+
+def fetch_ongoing_projects():
+    url = "https://www.rda.go.kr/young/custom.do"
+    resp = requests.get(url)
+    resp.raise_for_status()
+    soup = BeautifulSoup(resp.text, "html.parser")
+
+    projects = []
+    
+    # 정확한 CSS 선택자: div.cardName > a
+    for a_tag in soup.select("div.cardName > a"):
+        title = a_tag.get("title", "").strip()
+        if title:
+            projects.append(title)
+        else:
+            # fallback: 내부 텍스트
+            projects.append(a_tag.get_text(strip=True))
+
+    return projects

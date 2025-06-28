@@ -27,7 +27,8 @@ from app.crud import (
     add_comment, toggle_like_post, get_posts_by_local, create_damage_report,
     get_like_status, get_comments_by_post, get_user_damage_reports,
     get_damage_report_detail, get_recent_reports, update_comment, delete_comment,
-    cancel_like_count, save_uploaded_file, validate_file, get_current_user, detect_damage_from_report
+    cancel_like_count, save_uploaded_file, validate_file, get_current_user, detect_damage_from_report,
+    fetch_ongoing_projects
 )
 from app.auth import create_access_token, get_current_user
 from fastapi.middleware.cors import CORSMiddleware
@@ -400,6 +401,11 @@ def detect_damage_api(
     """
     result = detect_damage_from_report(report_id, confidence_threshold)
     return result
+
+@app.get("/rda/ongoing-projects")
+def read_ongoing_projects():
+    projects = fetch_ongoing_projects()
+    return {"ongoing_projects": projects}
 
 # @app.on_event("startup")
 # def check_routes():
