@@ -624,34 +624,17 @@ def process_yolo_results(results, labels, confidence_threshold=0.25):
     return detections
 
 def detect_damage_from_report(report_id: str, confidence_threshold: float = 0.25):
-    print(f"검색하려는 report_id: {report_id}")
-    print(f"report_id 타입: {type(report_id)}")
-    
-    # 전체 데이터 확인
-    total_count = db.damage_report.count_documents({})
-    print(f"damage_report 컬렉션의 총 문서 수: {total_count}")
-    
-    # 첫 번째 문서 확인
-    first_doc = db.damage_report.find_one()
-    if first_doc:
-        print(f"첫 번째 문서의 _id: {first_doc['_id']}, 타입: {type(first_doc['_id'])}")
-    
-    # ObjectId로 시도
     from bson import ObjectId
+
+    print(f"검색하려는 report_id: {report_id}")
+
+    # report 조회 (ObjectId → str 두 가지 방식 시도)
     try:
         object_id = ObjectId(report_id)
-        print(f"ObjectId로 변환: {object_id}")
         report = db.damage_report.find_one({"_id": object_id})
-        print(f"ObjectId로 검색 결과: {report is not None}")
-    except Exception as e:
-        print(f"ObjectId 변환 실패: {e}")
-        report = None
-    
-    # 문자열로도 시도
-    if not report:
+    except Exception:
         report = db.damage_report.find_one({"_id": report_id})
-        print(f"문자열로 검색 결과: {report is not None}")
-    
+
     if not report:
         raise HTTPException(status_code=404, detail="해당 report_id의 신고를 찾을 수 없습니다")
 
@@ -661,10 +644,33 @@ def detect_damage_from_report(report_id: str, confidence_threshold: float = 0.25
     if not main or not sub:
         raise HTTPException(status_code=400, detail="main_category 또는 sub_category 정보가 부족합니다")
 
-    if not report.get("files") or not report["files"][0].get("file_path"):
-        raise HTTPException(status_code=400, detail="저장된 이미지 경로를 찾을 수 없습니다")
+    # 파일 경로 추출
+    files = report.get("files", [])
+    if not files:
+        raise HTTPException(status_code=400, detail="저장된 파일이 없습니다.")
 
-    image_path = Path(report["files"][0]["file_path"])
+    file_info = files[0]
+    file_path = None
+
+    if isinstance(file_info, dict):
+        file_path = file_info.get("file_path") or file_info.get("file_url")
+    elif isinstance(file_info, str):
+        file_path = file_info
+    else:
+        raise HTTPException(status_code=400, detail="파일 정보 형식이 잘못되었습니다.")
+
+    if not file_path:
+        raise HTTPException(status_code=400, detail="파일 경로를 찾을 수 없습니다.")
+
+    # 로컬 파일 경로 확인
+    image_path = Path(file_path)
+    if not image_path.exists():
+        # file_path가 URL이라면 로컬 경로로 변환 시도
+        static_prefix = "/static/uploads/reports/"
+        if static_prefix in file_path:
+            relative = file_path.split(static_prefix)[-1]
+            image_path = REPORT_DIR / relative
+
     if not image_path.exists():
         raise HTTPException(status_code=404, detail="이미지 파일이 존재하지 않습니다")
 
@@ -673,6 +679,7 @@ def detect_damage_from_report(report_id: str, confidence_threshold: float = 0.25
 
     image_pil = preprocess_image(image_bytes)
 
+    # YOLO 탐지 수행
     if sub == "해충":
         results = pest_model(image_pil)
         labels = pest_labels
