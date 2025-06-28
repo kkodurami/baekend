@@ -415,6 +415,7 @@ def validate_file(file: UploadFile) -> bool:
         return False
     return True
 
+# 🔥 수정된 파일 업로드 함수
 async def save_uploaded_file(file: UploadFile, report_id: str) -> dict:
     try:
         file_ext = Path(file.filename).suffix.lower()
@@ -428,11 +429,17 @@ async def save_uploaded_file(file: UploadFile, report_id: str) -> dict:
         with open(file_path, "wb") as buffer:
             buffer.write(content)
 
+        # 🔥 파일 URL 생성 개선
+        file_url = f"/static/uploads/reports/{unique_filename}"
+        
+        print(f"📁 파일 저장 완료: {file_path}")
+        print(f"🔗 파일 URL: {file_url}")
+
         return {
             "original_filename": file.filename,
             "saved_filename": unique_filename,
             "file_path": str(file_path),
-            "file_url": f"/static/uploads/reports/{unique_filename}",
+            "file_url": file_url,  # 올바른 URL 형태
             "file_size": len(content),
             "content_type": file.content_type
         }
@@ -440,7 +447,8 @@ async def save_uploaded_file(file: UploadFile, report_id: str) -> dict:
     except Exception as e:
         logger.error(f"파일 저장 실패: {str(e)}")
         raise HTTPException(status_code=500, detail=f"파일 저장 실패: {str(e)}")
-    
+
+
 # JSON 저장 디렉토리 설정
 BASE_DIR = Path(__file__).parent
 REPORT_DIR = BASE_DIR / "static" / "uploads" / "reports"
@@ -465,6 +473,15 @@ def create_damage_report(
         # 사용자 정보 처리 - ObjectId 문제 해결
         user_id = str(user.get("_id")) if "_id" in user else str(user.get("user_id", ""))
         
+           
+        # 🔥 파일 정보 처리 개선
+        processed_files = []
+        for file_data in file_info:
+            if isinstance(file_data, dict) and "file_url" in file_data:
+                processed_files.append(file_data["file_url"])
+            else:
+                processed_files.append(str(file_data))
+
         report_data = {
             "user_id": user_id,  # 문자열로 저장
             "username": user.get("username", ""),
@@ -476,24 +493,24 @@ def create_damage_report(
             "local": local,
             "latitude": float(latitude) if latitude and latitude != "" else None,
             "longitude": float(longitude) if longitude and longitude != "" else None,
-            "files": file_info,
+            "files": processed_files,  # 파일 URL 목록만 저장
             "created_at": datetime.utcnow(),  # datetime.now() 대신 utcnow() 사용
             "status": "접수완료"
         }
         
         print(f"저장할 데이터: {report_data}")  # 디버깅용
         
-        # MongoDB에 저장
+      # MongoDB에 저장
         result = damage_report_collection.insert_one(report_data)
         
         if result.inserted_id:
-            print(f"저장 성공! ID: {result.inserted_id}")
+            print(f"✅ 저장 성공! ID: {result.inserted_id}")
             return str(result.inserted_id)
         else:
             raise Exception("저장 실패")
             
     except Exception as e:
-        print(f"DB 저장 오류: {str(e)}")
+        print(f"❌ DB 저장 오류: {str(e)}")
         raise HTTPException(status_code=500, detail=f"신고 저장 실패: {str(e)}")
 
 
@@ -507,7 +524,9 @@ def get_user_damage_reports(user_id: str):
             "id": str(report["_id"]),
             "main_category": report.get("main_category"),
             "sub_category": report.get("sub_category"),
-            "title": report.get("title")
+            "title": report.get("title"),
+            "latitude": report.get("latitude"),
+            "longitude": report.get("longitude")
         })
     return result
 
