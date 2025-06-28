@@ -197,11 +197,11 @@ def write_comment(
 # 댓글 수정
 @app.patch("/comments/{comment_id}")
 def edit_comment(
-    comments_id: str,
+    comment_id: str,
     comment_update: CommentUpdate,
     current_user: dict = Depends(get_current_user)
 ):
-    update_comment(comments_id, str(current_user["_id"]), comment_update.content)
+    update_comment(comment_id, str(current_user["_id"]), comment_update.content)
     return {"message": "✅ 댓글이 수정되었습니다."}
 
 # 댓글 삭제
