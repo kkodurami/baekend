@@ -24,9 +24,6 @@ import numpy as np
 from ultralytics import YOLO
 from bs4 import BeautifulSoup
 import requests
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.common.by import By
 import re
 from urllib.parse import urljoin
 from app import schemas
