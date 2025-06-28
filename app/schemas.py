@@ -1,5 +1,5 @@
-from pydantic import BaseModel
-from typing import Optional, List, Literal
+from pydantic import BaseModel, HttpUrl
+from typing import Optional, List, Literal, Dict
 from datetime import datetime
 
 class MyPageResponse(BaseModel) :
@@ -8,12 +8,13 @@ class MyPageResponse(BaseModel) :
     local_id : int
     region_name: Optional[str] = None
     crop_name : Optional[str] = None
-    profile_image : Optional[str] = None
+    # profile_image : Optional[str] = None
 
 class MyPageUpdateRequest(BaseModel):
     crop_name : Optional[str] = None
     profile_image : Optional[str] = None
     local_id: Optional[int] = None
+    # profile_image : Optional[str] = None
 
 class ChangePasswordRequest(BaseModel):
     current_password : str
@@ -52,3 +53,6 @@ class DamageReportRequest(BaseModel):
     latitude: Optional[float] = None
     longitude: Optional[float] = None
 
+class Project(BaseModel):
+    title: str
+    link: str
