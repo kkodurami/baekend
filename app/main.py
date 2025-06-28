@@ -388,7 +388,7 @@ def read_recent_reports(limit: int = 20):
     return {"reports": reports}
 
 # 병해충감지 
-@app.get("/detect-damage/{report_id}")
+@app.get("/damage-report/detect-damage/{report_id}")
 def detect_damage_api(
     report_id: str,
     confidence_threshold: float = Query(0.25, ge=0.0, le=1.0, description="신뢰도 임계값")
