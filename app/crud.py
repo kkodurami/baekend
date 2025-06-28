@@ -16,8 +16,17 @@ import json
 import logging
 from pathlib import Path
 from typing import Optional, List
-
-
+import torch
+from PIL import Image
+import io
+import pandas as pd
+import numpy as np
+from ultralytics import YOLO
+from bs4 import BeautifulSoup
+import requests
+import re
+from urllib.parse import urljoin
+from app import schemas
 
 def create_user(user : UserRegister) :
     if users_collection.find_one({"email":user.email}) :
@@ -415,6 +424,7 @@ def validate_file(file: UploadFile) -> bool:
         return False
     return True
 
+# 🔥 수정된 파일 업로드 함수
 async def save_uploaded_file(file: UploadFile, report_id: str) -> dict:
     try:
         file_ext = Path(file.filename).suffix.lower()
@@ -428,11 +438,17 @@ async def save_uploaded_file(file: UploadFile, report_id: str) -> dict:
         with open(file_path, "wb") as buffer:
             buffer.write(content)
 
+        # 🔥 파일 URL 생성 개선
+        file_url = f"/static/uploads/reports/{unique_filename}"
+        
+        print(f"📁 파일 저장 완료: {file_path}")
+        print(f"🔗 파일 URL: {file_url}")
+
         return {
             "original_filename": file.filename,
             "saved_filename": unique_filename,
             "file_path": str(file_path),
-            "file_url": f"/static/uploads/reports/{unique_filename}",
+            "file_url": file_url,  # 올바른 URL 형태
             "file_size": len(content),
             "content_type": file.content_type
         }
@@ -440,7 +456,8 @@ async def save_uploaded_file(file: UploadFile, report_id: str) -> dict:
     except Exception as e:
         logger.error(f"파일 저장 실패: {str(e)}")
         raise HTTPException(status_code=500, detail=f"파일 저장 실패: {str(e)}")
-    
+
+
 # JSON 저장 디렉토리 설정
 BASE_DIR = Path(__file__).parent
 REPORT_DIR = BASE_DIR / "static" / "uploads" / "reports"
@@ -465,6 +482,15 @@ def create_damage_report(
         # 사용자 정보 처리 - ObjectId 문제 해결
         user_id = str(user.get("_id")) if "_id" in user else str(user.get("user_id", ""))
         
+           
+        # 🔥 파일 정보 처리 개선
+        processed_files = []
+        for file_data in file_info:
+            if isinstance(file_data, dict) and "file_url" in file_data:
+                processed_files.append(file_data["file_url"])
+            else:
+                processed_files.append(str(file_data))
+
         report_data = {
             "user_id": user_id,  # 문자열로 저장
             "username": user.get("username", ""),
@@ -476,24 +502,24 @@ def create_damage_report(
             "local": local,
             "latitude": float(latitude) if latitude and latitude != "" else None,
             "longitude": float(longitude) if longitude and longitude != "" else None,
-            "files": file_info,
+            "files": processed_files,  # 파일 URL 목록만 저장
             "created_at": datetime.utcnow(),  # datetime.now() 대신 utcnow() 사용
             "status": "접수완료"
         }
         
         print(f"저장할 데이터: {report_data}")  # 디버깅용
         
-        # MongoDB에 저장
+      # MongoDB에 저장
         result = damage_report_collection.insert_one(report_data)
         
         if result.inserted_id:
-            print(f"저장 성공! ID: {result.inserted_id}")
+            print(f"✅ 저장 성공! ID: {result.inserted_id}")
             return str(result.inserted_id)
         else:
             raise Exception("저장 실패")
             
     except Exception as e:
-        print(f"DB 저장 오류: {str(e)}")
+        print(f"❌ DB 저장 오류: {str(e)}")
         raise HTTPException(status_code=500, detail=f"신고 저장 실패: {str(e)}")
 
 
@@ -507,7 +533,9 @@ def get_user_damage_reports(user_id: str):
             "id": str(report["_id"]),
             "main_category": report.get("main_category"),
             "sub_category": report.get("sub_category"),
-            "title": report.get("title")
+            "title": report.get("title"),
+            "latitude": report.get("latitude"),
+            "longitude": report.get("longitude")
         })
     return result
 
@@ -551,3 +579,167 @@ def get_recent_reports(limit: int = 10):
         return reports
     except Exception as e:
         raise HTTPException(status_code=500, detail="신고 목록 조회 중 오류 발생")
+
+# 모델 경로 설정 (절대경로)
+BASE_DIR = Path(__file__).resolve().parent
+MODEL_DIR = BASE_DIR / "model"
+
+pest_model_path = MODEL_DIR / "Bug_Detect.pt"  # 해충 탐지 모델
+disease_model_path = MODEL_DIR / "Crop_Disease.pt"  # 병해 탐지 모델
+
+if not pest_model_path.exists():
+    raise RuntimeError(f"해충 탐지 모델이 존재하지 않습니다: {pest_model_path}")
+if not disease_model_path.exists():
+    raise RuntimeError(f"병해 탐지 모델이 존재하지 않습니다: {disease_model_path}")
+
+# Ultralytics YOLO 모델 로드
+pest_model = YOLO(str(pest_model_path))
+disease_model = YOLO(str(disease_model_path))
+
+pest_labels = pest_model.names
+disease_labels = disease_model.names
+
+def preprocess_image(image_bytes):
+    try:
+        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        return image
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"이미지 처리 실패: {str(e)}")
+
+def process_yolo_results(results, labels, confidence_threshold=0.25):
+    detections = []
+    for box in results[0].boxes:
+        conf = float(box.conf[0])
+        if conf >= confidence_threshold:
+            class_id = int(box.cls[0])
+            xyxy = box.xyxy[0].tolist()
+            detections.append({
+                "class_id": class_id,
+                "class_name": labels[class_id],
+                "confidence": conf,
+                "bbox": {
+                    "x1": xyxy[0],
+                    "y1": xyxy[1],
+                    "x2": xyxy[2],
+                    "y2": xyxy[3]
+                }
+            })
+    return detections
+
+def detect_damage_from_report(report_id: str, confidence_threshold: float = 0.25):
+    from bson import ObjectId
+
+    print(f"검색하려는 report_id: {report_id}")
+
+    # report 조회 (ObjectId → str 두 가지 방식 시도)
+    try:
+        object_id = ObjectId(report_id)
+        report = db.damage_report.find_one({"_id": object_id})
+    except Exception:
+        report = db.damage_report.find_one({"_id": report_id})
+
+    if not report:
+        raise HTTPException(status_code=404, detail="해당 report_id의 신고를 찾을 수 없습니다")
+
+    main = report.get("main_category")
+    sub = report.get("sub_category")
+
+    if not main or not sub:
+        raise HTTPException(status_code=400, detail="main_category 또는 sub_category 정보가 부족합니다")
+
+    # 파일 경로 추출
+    files = report.get("files", [])
+    if not files:
+        raise HTTPException(status_code=400, detail="저장된 파일이 없습니다.")
+
+    file_info = files[0]
+    file_path = None
+
+    if isinstance(file_info, dict):
+        file_path = file_info.get("file_path") or file_info.get("file_url")
+    elif isinstance(file_info, str):
+        file_path = file_info
+    else:
+        raise HTTPException(status_code=400, detail="파일 정보 형식이 잘못되었습니다.")
+
+    if not file_path:
+        raise HTTPException(status_code=400, detail="파일 경로를 찾을 수 없습니다.")
+
+    # 로컬 파일 경로 확인
+    image_path = Path(file_path)
+    if not image_path.exists():
+        # file_path가 URL이라면 로컬 경로로 변환 시도
+        static_prefix = "/static/uploads/reports/"
+        if static_prefix in file_path:
+            relative = file_path.split(static_prefix)[-1]
+            image_path = REPORT_DIR / relative
+
+    if not image_path.exists():
+        raise HTTPException(status_code=404, detail="이미지 파일이 존재하지 않습니다")
+
+    with open(image_path, "rb") as f:
+        image_bytes = f.read()
+
+    image_pil = preprocess_image(image_bytes)
+
+    # YOLO 탐지 수행
+    if sub == "해충":
+        results = pest_model(image_pil)
+        labels = pest_labels
+        category = "해충"
+    elif sub == "병해":
+        results = disease_model(image_pil)
+        labels = disease_labels
+        category = "병해"
+    else:
+        raise HTTPException(status_code=400, detail="지원하지 않는 sub_category입니다 (해충, 병해만 가능)")
+
+    detections = process_yolo_results(results, labels, confidence_threshold)
+
+    return {
+        "category": category,
+        "total_detections": len(detections),
+        "detections": detections,
+        "primary_detection": detections[0] if detections else None
+    }
+
+def convert_js_link(js_link: str) -> str:
+    if js_link.startswith("javascript:fn_detailView"):
+        try:
+            inner = js_link[js_link.index("(")+1 : js_link.index(")")]
+            type_str, s_id = [s.strip().strip("'") for s in inner.split(",")]
+            return f"https://www.rda.go.kr/young/custom/{type_str}/view.do?sId={s_id}&cp=1"
+        except Exception:
+            return ""
+    return js_link
+
+
+def fetch_ongoing_projects():
+    """
+    농촌진흥청 ongoing projects (세미나/행사) 목록과 상세페이지 링크를 크롤링하여 반환
+    """
+    base_url = "https://www.rda.go.kr"
+    list_url = f"{base_url}/young/custom.do"
+
+    resp = requests.get(list_url)
+    resp.raise_for_status()
+    soup = BeautifulSoup(resp.text, "html.parser")
+
+    projects = []
+
+    for a_tag in soup.select("div.cardName > a"):
+        title = a_tag.get("title", "").strip()
+        if not title:
+            title = a_tag.get_text(strip=True)
+
+        raw_link = a_tag.get("href", "").strip()
+        link = convert_js_link(raw_link)
+
+        projects.append(
+            schemas.Project(
+                title=title,
+                link=link
+            )
+        )
+
+    return projects
