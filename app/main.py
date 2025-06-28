@@ -1,16 +1,19 @@
 from fastapi import (
     FastAPI, HTTPException, Header, Depends, APIRouter,
-    UploadFile, File, Form
+    UploadFile, File, Form, Query
 )
 from fastapi.security import HTTPBearer
 from fastapi.openapi.utils import get_openapi
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 from typing import Optional, List
 from datetime import datetime
 import os
 
-import uvicorn
+import uuid
+from pathlib import Path
+import logging
 
 from app.models import UserRegister, UserLogin, CommentUpdate
 from app.schemas import (
@@ -19,18 +22,22 @@ from app.schemas import (
 )
 from app.crud import (
     create_user, authenticate_user, get_user_mypage, update_user_mypage,
-    change_user_password, save_profile_image, create_post,
+    change_user_password, create_post,
     get_all_posts_with_index, get_post_detail, update_post, delete_post,
     add_comment, toggle_like_post, get_posts_by_local, create_damage_report,
     get_like_status, get_comments_by_post, get_user_damage_reports,
     get_damage_report_detail, get_recent_reports, update_comment, delete_comment,
-    cancel_like_count
+    cancel_like_count, save_uploaded_file, validate_file, get_current_user, detect_damage_from_report,
+    fetch_ongoing_projects
 )
+
+from . import crud, schemas
 from app.auth import create_access_token, get_current_user
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from app.database import users_collection, post_collection
 from bson import ObjectId
+from fastapi.staticfiles import StaticFiles
 
 app = FastAPI()
 # router = APIRouter()
@@ -129,14 +136,14 @@ def update_mypage(update_req: MyPageUpdateRequest, current_user: dict = Depends(
     
 
 # 프로필 이미지 업로드
-@app.post("/upload-profile-image")
-def upload_profile_image(
-    file: UploadFile = File(...),
-    current_user: dict = Depends(get_current_user)
-):
-    user_id = str(current_user["_id"])
-    url = save_profile_image(user_id, file)
-    return {"message": "✅ 프로필 이미지 업로드 완료", "profile_image_url": url}
+# @app.post("/upload-profile-image")
+# def upload_profile_image(
+#     file: UploadFile = File(...),
+#     current_user: dict = Depends(get_current_user)
+# ):
+#     user_id = str(current_user["_id"])
+#     url = save_profile_image(user_id, file)
+#     return {"message": "✅ 프로필 이미지 업로드 완료", "profile_image_url": url}
 
 # 게시글 작성
 @app.post("/post")
@@ -193,11 +200,11 @@ def write_comment(
 # 댓글 수정
 @app.patch("/comments/{comment_id}")
 def edit_comment(
-    comments_id: str,
+    comment_id: str,
     comment_update: CommentUpdate,
     current_user: dict = Depends(get_current_user)
 ):
-    update_comment(comments_id, str(current_user["_id"]), comment_update.content)
+    update_comment(comment_id, str(current_user["_id"]), comment_update.content)
     return {"message": "✅ 댓글이 수정되었습니다."}
 
 # 댓글 삭제
@@ -280,9 +287,27 @@ def list_local_posts(current_user: dict = Depends(get_current_user)):
     posts = get_posts_by_local(local_id)
     return {"posts": posts}
 
-# 신고 페이지
-@app.post("/report-damage")
-async def report_damage(
+
+# 디렉토리 설정
+BASE_DIR = Path(__file__).parent.absolute()
+STATIC_DIR = BASE_DIR / "static"
+UPLOAD_DIR = STATIC_DIR / "uploads"
+REPORT_DIR = UPLOAD_DIR / "reports"
+
+# 디렉토리 생성
+for dir in [STATIC_DIR, UPLOAD_DIR, REPORT_DIR]:
+    dir.mkdir(exist_ok=True)
+
+# 정적 파일 마운트
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+# 로깅 설정
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# 피해 신고
+@app.post("/damage-report")
+async def report_damage_fixed(
     main_category: str = Form(...),
     sub_category: str = Form(...),
     title: Optional[str] = Form(None),
@@ -290,21 +315,59 @@ async def report_damage(
     local: Optional[str] = Form(None),
     latitude: Optional[str] = Form(None),
     longitude: Optional[str] = Form(None),
-    files: List[UploadFile] = File(...),
+    files: List[UploadFile] = File([]),
     current_user: dict = Depends(get_current_user)
 ):
-    create_damage_report(
-        user=current_user,
-        main_category=main_category,
-        sub_category=sub_category,
-        title=title,
-        content=content,
-        local=local,
-        latitude=latitude, # 위도
-        longitude=longitude, # 경도
-        files=files
-    )
-    return {"message": "✅ 신고가 성공적으로 접수되었습니다."}
+    """수정된 피해 신고 함수"""
+    
+    print(f"현재 사용자: {current_user}")  # 디버깅용
+    print(f"받은 데이터: main_category={main_category}, sub_category={sub_category}")
+    
+    try:
+        # 파일 처리 (기존 로직 유지하되 에러 처리 강화)
+        uploaded_file_infos = []
+        
+        if files:
+            report_id = f"RPT_{uuid.uuid4().hex[:8]}"
+            
+            for file in files:
+                if file.filename:  # 빈 파일 체크
+                    if not validate_file(file):
+                        raise HTTPException(status_code=400, detail=f"{file.filename}는 지원하지 않는 파일입니다.")
+                    
+                    try:
+                        uploaded = await save_uploaded_file(file, report_id)
+                        uploaded_file_infos.append(uploaded)
+                    except Exception as e:
+                        print(f"파일 저장 오류: {str(e)}")
+                        # 파일 저장 실패해도 진행 (선택사항)
+                        continue
+        
+        # DB에 저장 - 수정된 함수 사용
+        report_id = create_damage_report(
+            user=current_user,
+            main_category=main_category,
+            sub_category=sub_category,
+            title=title,
+            content=content,
+            local=local,
+            latitude=latitude,
+            longitude=longitude,
+            file_info=uploaded_file_infos
+        )
+        
+        return {
+            "message": "✅ 신고가 접수되었습니다.", 
+            "report_id": report_id,
+            "uploaded_files": len(uploaded_file_infos)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"전체 프로세스 오류: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"신고 처리 실패: {str(e)}")
+
 
 # 사용자의 신고 목록 조회
 @app.get("/my-reports")
@@ -326,6 +389,27 @@ def read_report_detail(report_id: str):
 def read_recent_reports(limit: int = 20):
     reports = get_recent_reports(limit)
     return {"reports": reports}
+
+# 병해충감지 
+@app.get("/damage-report/detect-damage/{report_id}")
+def detect_damage_api(
+    report_id: str,
+    confidence_threshold: float = Query(0.25, ge=0.0, le=1.0, description="신뢰도 임계값")
+):
+    """
+    신고된 이미지 기반으로 자동 탐지 수행
+    - report_id로 신고 이미지 불러옴
+    - sub_category가 '해충' 또는 '병해'인 경우 해당 모델로 탐지
+    """
+    result = detect_damage_from_report(report_id, confidence_threshold)
+    return result
+
+@app.get("/rda/ongoing-projects", response_model=list[schemas.Project])
+def get_ongoing_projects():
+    """
+    농촌진흥청 ongoing projects (세미나/행사) 목록과 상세페이지 링크를 반환합니다.
+    """
+    return crud.fetch_ongoing_projects()
 
 
 if __name__ == "__main__":
