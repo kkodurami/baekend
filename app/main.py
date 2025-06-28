@@ -14,6 +14,7 @@ import os
 import uuid
 from pathlib import Path
 import logging
+import uvicorn
 
 from app.models import UserRegister, UserLogin, CommentUpdate
 from app.schemas import (
@@ -411,6 +412,10 @@ def get_ongoing_projects():
     """
     return crud.fetch_ongoing_projects()
 
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
+    
 # @app.on_event("startup")
 # def check_routes():
 #     print("Registered routes:")
