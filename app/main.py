@@ -135,6 +135,17 @@ def update_mypage(update_req: MyPageUpdateRequest, current_user: dict = Depends(
         raise HTTPException(status_code=500, detail="서버 오류")
     
 
+# 현재 사용자 정보 조회
+@app.get("/users/me")
+def get_current_user_info(current_user: dict = Depends(get_current_user)):
+    user_info = {
+        "id": str(current_user["_id"]),
+        "username": current_user["username"],
+        "email": current_user["email"], 
+        "local_id": current_user["local_id"]
+    }
+    return user_info    
+
 # 프로필 이미지 업로드
 # @app.post("/upload-profile-image")
 # def upload_profile_image(
@@ -404,12 +415,14 @@ def detect_damage_api(
     result = detect_damage_from_report(report_id, confidence_threshold)
     return result
 
+# 세미나
 @app.get("/rda/ongoing-projects", response_model=list[schemas.Project])
 def get_ongoing_projects():
     """
     농촌진흥청 ongoing projects (세미나/행사) 목록과 상세페이지 링크를 반환합니다.
     """
     return crud.fetch_ongoing_projects()
+
 
 # @app.on_event("startup")
 # def check_routes():

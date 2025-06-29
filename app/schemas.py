@@ -21,7 +21,6 @@ class ChangePasswordRequest(BaseModel):
     new_password : str
 
 class PostCreate(BaseModel) :
-    local_id : int
     title : str
     content : str
     tags : Optional[List[str]] = []

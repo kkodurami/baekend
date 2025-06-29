@@ -11,3 +11,8 @@ beautifulsoup4
 pillow
 torch
 ultralytics
+pydantic[email]
+email-validator
+uvicorn[standard]
+opencv-python-headless
+python-multipart
