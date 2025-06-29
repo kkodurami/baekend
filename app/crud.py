@@ -27,6 +27,7 @@ import requests
 import re
 from urllib.parse import urljoin
 from app import schemas
+import base64
 
 def create_user(user : UserRegister) :
     if users_collection.find_one({"email":user.email}) :
@@ -425,102 +426,53 @@ def validate_file(file: UploadFile) -> bool:
     return True
 
 # 🔥 수정된 파일 업로드 함수
-async def save_uploaded_file(file: UploadFile, report_id: str) -> dict:
-    try:
-        file_ext = Path(file.filename).suffix.lower()
-        unique_filename = f"{report_id}_{uuid.uuid4().hex[:8]}{file_ext}"
-        file_path = REPORT_DIR / unique_filename
+async def save_uploaded_file_base64(file: UploadFile) -> dict:
+    content = await file.read()
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="파일 크기가 너무 큽니다.")
+    
+    encoded_str = base64.b64encode(content).decode("utf-8")
+    return {
+        "original_filename": file.filename,
+        "content_type": file.content_type,
+        "base64_data": encoded_str
+    }
 
-        content = await file.read()
-        if len(content) > MAX_FILE_SIZE:
-            raise HTTPException(status_code=413, detail="파일 크기가 너무 큽니다.")
-
-        with open(file_path, "wb") as buffer:
-            buffer.write(content)
-
-        # 🔥 파일 URL 생성 개선
-        file_url = f"/static/uploads/reports/{unique_filename}"
-        
-        print(f"📁 파일 저장 완료: {file_path}")
-        print(f"🔗 파일 URL: {file_url}")
-
-        return {
-            "original_filename": file.filename,
-            "saved_filename": unique_filename,
-            "file_path": str(file_path),
-            "file_url": file_url,  # 올바른 URL 형태
-            "file_size": len(content),
-            "content_type": file.content_type
-        }
-
-    except Exception as e:
-        logger.error(f"파일 저장 실패: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"파일 저장 실패: {str(e)}")
-
-
-# JSON 저장 디렉토리 설정
-BASE_DIR = Path(__file__).parent
-REPORT_DIR = BASE_DIR / "static" / "uploads" / "reports"
-REPORT_DIR.mkdir(parents=True, exist_ok=True)
-
-# 2. crud.py 수정 - create_damage_report 함수
 def create_damage_report(
     user: dict,
     main_category: str,
     sub_category: str,
-    title: Optional[str],
-    content: Optional[str],
-    local: Optional[str],
-    latitude: Optional[str],
-    longitude: Optional[str],
-    file_info: List[dict]
+    title: str,
+    content: str,
+    local: str,
+    latitude: str,
+    longitude: str,
+    file_info: list
 ) -> str:
-    """
-    손해 신고 데이터 MongoDB에 저장 (수정된 버전)
-    """
-    try:
-        # 사용자 정보 처리 - ObjectId 문제 해결
-        user_id = str(user.get("_id")) if "_id" in user else str(user.get("user_id", ""))
-        
-           
-        # 🔥 파일 정보 처리 개선
-        processed_files = []
-        for file_data in file_info:
-            if isinstance(file_data, dict) and "file_url" in file_data:
-                processed_files.append(file_data["file_url"])
-            else:
-                processed_files.append(str(file_data))
+    report_data = {
+        "user_id": str(user["_id"]),
+        "username": user.get("username"),
+        "email": user.get("email"),
+        "main_category": main_category,
+        "sub_category": sub_category,
+        "title": title,
+        "content": content,
+        "local": local,
+        "latitude": float(latitude) if latitude else None,
+        "longitude": float(longitude) if longitude else None,
+        "files": file_info,
+        "created_at": datetime.utcnow(),
+        "status": "접수완료"
+    }
+    print("저장할 데이터:", report_data)
 
-        report_data = {
-            "user_id": user_id,  # 문자열로 저장
-            "username": user.get("username", ""),
-            "email": user.get("email", ""),
-            "main_category": main_category,
-            "sub_category": sub_category,
-            "title": title,
-            "content": content,
-            "local": local,
-            "latitude": float(latitude) if latitude and latitude != "" else None,
-            "longitude": float(longitude) if longitude and longitude != "" else None,
-            "files": processed_files,  # 파일 URL 목록만 저장
-            "created_at": datetime.utcnow(),  # datetime.now() 대신 utcnow() 사용
-            "status": "접수완료"
-        }
-        
-        print(f"저장할 데이터: {report_data}")  # 디버깅용
-        
-      # MongoDB에 저장
-        result = damage_report_collection.insert_one(report_data)
-        
-        if result.inserted_id:
-            print(f"✅ 저장 성공! ID: {result.inserted_id}")
-            return str(result.inserted_id)
-        else:
-            raise Exception("저장 실패")
-            
-    except Exception as e:
-        print(f"❌ DB 저장 오류: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"신고 저장 실패: {str(e)}")
+    result = db.damage_report.insert_one(report_data)
+    
+    print("inserted_id:", result.inserted_id)
+    if not result.inserted_id:
+        raise HTTPException(status_code=500, detail="DB 저장 실패")
+
+    return str(result.inserted_id)
 
 
 def get_user_damage_reports(user_id: str):
@@ -542,23 +494,15 @@ def get_user_damage_reports(user_id: str):
 
 def get_damage_report_detail(report_id: str):
     try:
-        oid = ObjectId(report_id)
+        report = db.damage_report.find_one({"_id": ObjectId(report_id)})
     except Exception:
         raise HTTPException(status_code=400, detail="유효하지 않은 report_id 형식입니다.")
 
-    report = db.damage_report.find_one({"_id": oid})
     if not report:
         raise HTTPException(status_code=404, detail="신고 내역을 찾을 수 없습니다.")
 
     report["id"] = str(report["_id"])
     del report["_id"]
-
-    # 민감한 정보 제거 (선택)
-    # report.pop("user_id", None)  # 필요시 작성자 정보 제거
-    # report.pop("username", None)
-    # report.pop("email", None)
-    # report.pop("phone", None)
-
     return report
 
 def get_recent_reports(limit: int = 10):
@@ -627,67 +571,35 @@ def process_yolo_results(results, labels, confidence_threshold=0.25):
     return detections
 
 def detect_damage_from_report(report_id: str, confidence_threshold: float = 0.25):
-    from bson import ObjectId
-
-    print(f"검색하려는 report_id: {report_id}")
-
-    # report 조회 (ObjectId → str 두 가지 방식 시도)
     try:
-        object_id = ObjectId(report_id)
-        report = db.damage_report.find_one({"_id": object_id})
+        report = db.damage_report.find_one({"_id": ObjectId(report_id)})
     except Exception:
-        report = db.damage_report.find_one({"_id": report_id})
+        raise HTTPException(status_code=400, detail="유효하지 않은 report_id 형식입니다.")
 
     if not report:
-        raise HTTPException(status_code=404, detail="해당 report_id의 신고를 찾을 수 없습니다")
+        raise HTTPException(status_code=404, detail="신고 내역을 찾을 수 없습니다.")
 
-    main = report.get("main_category")
-    sub = report.get("sub_category")
-
-    if not main or not sub:
-        raise HTTPException(status_code=400, detail="main_category 또는 sub_category 정보가 부족합니다")
-
-    # 파일 경로 추출
     files = report.get("files", [])
     if not files:
         raise HTTPException(status_code=400, detail="저장된 파일이 없습니다.")
 
     file_info = files[0]
-    file_path = None
+    base64_data = file_info.get("base64_data")
+    if not base64_data:
+        raise HTTPException(status_code=400, detail="파일에 Base64 데이터가 없습니다.")
 
-    if isinstance(file_info, dict):
-        file_path = file_info.get("file_path") or file_info.get("file_url")
-    elif isinstance(file_info, str):
-        file_path = file_info
-    else:
-        raise HTTPException(status_code=400, detail="파일 정보 형식이 잘못되었습니다.")
-
-    if not file_path:
-        raise HTTPException(status_code=400, detail="파일 경로를 찾을 수 없습니다.")
-
-    # 로컬 파일 경로 확인
-    image_path = Path(file_path)
-    if not image_path.exists():
-        # file_path가 URL이라면 로컬 경로로 변환 시도
-        static_prefix = "/static/uploads/reports/"
-        if static_prefix in file_path:
-            relative = file_path.split(static_prefix)[-1]
-            image_path = REPORT_DIR / relative
-
-    if not image_path.exists():
-        raise HTTPException(status_code=404, detail="이미지 파일이 존재하지 않습니다")
-
-    with open(image_path, "rb") as f:
-        image_bytes = f.read()
-
-    image_pil = preprocess_image(image_bytes)
+    try:
+        image_bytes = base64.b64decode(base64_data)
+        image_pil = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"이미지 디코드 실패: {str(e)}")
 
     # YOLO 탐지 수행
-    if sub == "해충":
+    if report["sub_category"] == "해충":
         results = pest_model(image_pil)
         labels = pest_labels
         category = "해충"
-    elif sub == "병해":
+    elif report["sub_category"] == "병해":
         results = disease_model(image_pil)
         labels = disease_labels
         category = "병해"

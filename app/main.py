@@ -27,8 +27,8 @@ from app.crud import (
     add_comment, toggle_like_post, get_posts_by_local, create_damage_report,
     get_like_status, get_comments_by_post, get_user_damage_reports,
     get_damage_report_detail, get_recent_reports, update_comment, delete_comment,
-    cancel_like_count, save_uploaded_file, validate_file, get_current_user, detect_damage_from_report,
-    fetch_ongoing_projects
+    cancel_like_count, validate_file, get_current_user, detect_damage_from_report,
+    fetch_ongoing_projects, save_uploaded_file_base64
 )
 
 from . import crud, schemas
@@ -299,18 +299,7 @@ def list_local_posts(current_user: dict = Depends(get_current_user)):
     return {"posts": posts}
 
 
-# 디렉토리 설정
-BASE_DIR = Path(__file__).parent.absolute()
-STATIC_DIR = BASE_DIR / "static"
-UPLOAD_DIR = STATIC_DIR / "uploads"
-REPORT_DIR = UPLOAD_DIR / "reports"
 
-# 디렉토리 생성
-for dir in [STATIC_DIR, UPLOAD_DIR, REPORT_DIR]:
-    dir.mkdir(exist_ok=True)
-
-# 정적 파일 마운트
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -329,32 +318,13 @@ async def report_damage_fixed(
     files: List[UploadFile] = File([]),
     current_user: dict = Depends(get_current_user)
 ):
-    """수정된 피해 신고 함수"""
-    
-    print(f"현재 사용자: {current_user}")  # 디버깅용
-    print(f"받은 데이터: main_category={main_category}, sub_category={sub_category}")
-    
     try:
-        # 파일 처리 (기존 로직 유지하되 에러 처리 강화)
         uploaded_file_infos = []
-        
-        if files:
-            report_id = f"RPT_{uuid.uuid4().hex[:8]}"
-            
-            for file in files:
-                if file.filename:  # 빈 파일 체크
-                    if not validate_file(file):
-                        raise HTTPException(status_code=400, detail=f"{file.filename}는 지원하지 않는 파일입니다.")
-                    
-                    try:
-                        uploaded = await save_uploaded_file(file, report_id)
-                        uploaded_file_infos.append(uploaded)
-                    except Exception as e:
-                        print(f"파일 저장 오류: {str(e)}")
-                        # 파일 저장 실패해도 진행 (선택사항)
-                        continue
-        
-        # DB에 저장 - 수정된 함수 사용
+        for file in files:
+            if file.filename:
+                uploaded = await save_uploaded_file_base64(file)
+                uploaded_file_infos.append(uploaded)
+
         report_id = create_damage_report(
             user=current_user,
             main_category=main_category,
@@ -366,17 +336,12 @@ async def report_damage_fixed(
             longitude=longitude,
             file_info=uploaded_file_infos
         )
-        
         return {
-            "message": "✅ 신고가 접수되었습니다.", 
+            "message": "✅ 신고가 접수되었습니다.",
             "report_id": report_id,
             "uploaded_files": len(uploaded_file_infos)
         }
-        
-    except HTTPException:
-        raise
     except Exception as e:
-        print(f"전체 프로세스 오류: {str(e)}")
         raise HTTPException(status_code=500, detail=f"신고 처리 실패: {str(e)}")
 
 
