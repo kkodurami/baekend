@@ -47,7 +47,10 @@ bearer_scheme = HTTPBearer()
 # CORS 설정
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # ⚠️ 개발 중에는 * 허용, 배포 시에는 도메인 제한 권장
+    allow_origins = [
+    "https://www.kkodurami.com",
+    "https://kkodurami.com"
+],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
